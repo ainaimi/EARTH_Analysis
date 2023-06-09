@@ -1,0 +1,446 @@
+---
+title: "afc CATE dr learner"
+author: "Ashley Naimi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+
+## Assessing n missing for variables
+
+pacman::p_load(
+  rio,          
+  here,         
+  skimr,        
+  tidyverse,     
+  gtsummary,    
+  rstatix,      
+  janitor,      
+  scales,        
+  flextable,    
+  epiR,
+  grf,
+  dplyr,
+  tidyverse,
+  haven,
+  VIM,
+  lmtest,
+  sandwich,
+  MASS
+  )
+
+
+#Load afc data, double check variables + attributes
+
+new_afc <- read_csv(here("data","afc_clean.csv"))
+```
+
+```{r}
+# Estimate Average Treatment Effects for two exposures: DOR and Smoking on AFC total 
+
+smoke<-lm(AFC_t ~ eversmok, data = afc)
+summary(smoke)
+##   estimate    std.err 
+##   -1.0988     0.6455  
+
+dor <-lm(AFC_t ~ DOR, data = afc)
+summary(dor)
+##   estimate    std.err 
+##   -7.9420     0.8326
+```
+
+The above ATE estimator uses a standard linear model, and does not adjust for anything. Those effects are crude. Let's use the causal forest algorithm to fit a double robust (AIPW) estimator of the ATE, where the propensity score model and the outcome model are estimated using random forests. 
+
+Much of the analysi swas taken from [here](https://bookdown.org/stanfordgsbsilab/ml-ci-tutorial/hte-i-binary-treatment.html)
+
+As above, our outcome is `AFC_t`, our exposures will be `eversmok` and `DOR`.
+
+Additionally, we'll adjust for the following confounders:
+
+`"age", "bmi", "white", "year", "educ1"`
+
+These variables (including confounders) will be potential modifiers 
+
+```{r}
+
+covariates <- c("age", "bmi", "white", "year", "educ1", 
+                "mEP1_sg", "mBZP1_sg", "mCNP_sg","miBP_sg", 
+                "mBP_sg","BP_3_sg", "M_PB_sg", "dehp_sg")
+covariates_matrix <- model.matrix(formula(paste0("~", paste0(covariates, collapse="+"))), data=new_afc)[,-1]
+
+exposure <- as.matrix(new_afc[,"eversmok"])
+#exposure <- as.matrix(new_afc[,"DOR"])
+
+outcome <- as.matrix(new_afc[,"AFC_t"])
+
+# Estimate a causal forest.
+forest <- causal_forest(
+              X=covariates_matrix,  
+              W=exposure,
+              Y=outcome,
+              num.trees = 2000,
+              honesty = TRUE,
+              min.node.size = 10,
+              alpha = .05, 
+              imbalance.penalty = 0,
+              stabilize.splits = TRUE,
+              tune.parameters = "all",
+              tune.num.trees = 200,
+              tune.num.reps = 50,
+              tune.num.draws = 1000,
+              compute.oob.predictions = TRUE,
+              num.threads = 10,
+              seed = 123)
+
+forest.ate <- average_treatment_effect(forest)
+
+forest.ate[3] <- forest.ate[1] - 1.96*forest.ate[2]
+forest.ate[4] <- forest.ate[1] + 1.96*forest.ate[2]
+
+attributes(forest.ate)$names[3:4] <- c("lcl", "ucl")
+
+# mean difference
+print(forest.ate)
+
+```
+
+Now let's look at CATEs. We'll start by getting predicted mean differences for each woman in the sample. 
+
+```{r}
+
+forest.tau <- forest
+
+# Get predicted differences from forest fitted above.
+tau.hat <- predict(forest.tau)$predictions  # tau(X) estimates
+
+hist(tau.hat, main="CATE estimates", freq=F, las=1)
+
+var_imp <- c(variable_importance(forest.tau))
+
+names(var_imp) <- covariates
+sorted_var_imp <- sort(var_imp, decreasing = TRUE)
+sorted_var_imp#[1:10]  # showing only first five
+```
+
+In principle, the mean of the `tau.hat` predictions should equal the ATE. Let's check:
+
+```{r}
+
+mean(tau.hat)
+
+```
+
+It's in the ballpark, but not quite the same. Let's find out why...
+
+```{r}
+# Valid randomized data and observational data with unconfoundedness+overlap.
+n <- nrow(new_afc)
+
+# Number of rankings that the predictions will be ranking on
+# (e.g., 2 for above/below median estimated CATE, 5 for estimated CATE quintiles, etc.)
+num.rankings <- 3
+
+# Prepare for data.splitting
+# Assign a fold number to each observation.
+# The argument 'clusters' in the next step will mimick K-fold cross-fitting.
+num.folds <- 10
+folds <- sort(seq(n) %% num.folds) + 1
+
+# Comment or uncomment depending on your setting.
+# Observational setting with unconfoundedness+overlap (unknown assignment probs):
+forest <- causal_forest(X = covariates_matrix, 
+                        Y = outcome, 
+                        W = exposure, 
+                        num.trees = 2000,
+                        honesty = TRUE,
+                        min.node.size = 10,
+                        alpha = .05, 
+                        imbalance.penalty = 0,
+                        stabilize.splits = TRUE,
+                        tune.parameters = "all",
+                        tune.num.trees = 200,
+                        tune.num.reps = 50,
+                        tune.num.draws = 1000,
+                        compute.oob.predictions = TRUE,
+                        num.threads = 10,
+                        seed = 123,
+                        clusters = folds)
+
+# Retrieve out-of-bag predictions.
+# Predictions for observation in fold k will be computed using
+# trees that were not trained using observations for that fold.
+tau.hat <- predict(forest)$predictions
+
+# Rank observations *within each fold* into quintiles according to their CATE predictions.
+ranking <- rep(NA, n)
+for (fold in seq(num.folds)) {
+  tau.hat.quantiles <- quantile(tau.hat[folds == fold], probs = seq(0, 1, by=1/num.rankings))
+  ranking[folds == fold] <- cut(tau.hat[folds == fold], tau.hat.quantiles, include.lowest=TRUE,labels=seq(num.rankings))
+}
+
+new_afc$ranking <- ranking
+
+```
+
+
+```{r}
+# Computing AIPW scores.
+e.hat <- forest$W.hat # P[W=1|X]
+m.hat <- forest$Y.hat # E[Y|X]
+
+Y <- outcome
+W <- exposure
+
+
+mu.hat.0 <- m.hat - e.hat*tau.hat # E[Y|X,W=0] = E[Y|X] - e(X)*tau(X)
+mu.hat.1 <- m.hat + (1 - e.hat)*tau.hat  # E[Y|X,W=1] = E[Y|X] + (1 - e(X))*tau(X)
+
+# AIPW scores
+aipw.scores <- tau.hat + W / e.hat * (Y -  mu.hat.1) - (1 - W) / (1 - e.hat) * (Y -  mu.hat.0)
+
+#Tryin something:
+
+plot(
+  1:length(aipw.scores),
+  sort(aipw.scores)
+  )
+```
+
+
+```{r}
+ols <- lm(aipw.scores ~ 0 + factor(ranking))
+forest.ate <- data.frame("aipw", 
+                         paste0("Q", seq(num.rankings)), 
+                         coeftest(ols, vcov = vcovHC(ols, "HC2"))[,1:2],
+                         coefci(ols, vcov. = vcovHC(ols, "HC2"))[,1:2])
+colnames(forest.ate) <- c("method", "ranking", "estimate", "std.err", "LCL", "UCL")
+rownames(forest.ate) <- NULL # just for display
+forest.ate
+```
+
+```{r}
+
+# Plotting the point estimate of average treatment effect 
+# and 95% confidence intervals around it.
+ggplot(forest.ate) +
+  aes(x = ranking, y = estimate) + 
+  geom_point(position=position_dodge(0.2)) +
+  geom_errorbar(aes(ymin=estimate-2*std.err, ymax=estimate+2*std.err), width=.2, position=position_dodge(0.2)) +
+  ylab("") + xlab("") +
+  theme_minimal() +
+  theme(legend.position="bottom", legend.title = element_blank())
+```
+
+Formal test comparing quantile effects. First, we need code to run the Romano-Wolf correction for false discovery:
+
+```{r}
+# Auxiliary function to computes adjusted p-values
+# following the Romano-Wolf method.
+# For a reference, see http://ftp.iza.org/dp12845.pdf page 8
+#  t.orig: vector of t-statistics from original model
+#  t.boot: matrix of t-statistics from bootstrapped models
+romano_wolf_correction <- function(t.orig, t.boot) {
+  abs.t.orig <- abs(t.orig)
+  abs.t.boot <- abs(t.boot)
+  abs.t.sorted <- sort(abs.t.orig, decreasing = TRUE)
+
+  max.order <- order(abs.t.orig, decreasing = TRUE)
+  rev.order <- order(max.order)
+
+  M <- nrow(t.boot)
+  S <- ncol(t.boot)
+
+  p.adj <- rep(0, S)
+  p.adj[1] <- mean(apply(abs.t.boot, 1, max) > abs.t.sorted[1])
+  for (s in seq(2, S)) {
+    cur.index <- max.order[s:S]
+    p.init <- mean(apply(abs.t.boot[, cur.index, drop=FALSE], 1, max) > abs.t.sorted[s])
+    p.adj[s] <- max(p.init, p.adj[s-1])
+  }
+  p.adj[rev.order]
+}
+
+# Computes adjusted p-values for linear regression (lm) models.
+#    model: object of lm class (i.e., a linear reg model)
+#    indices: vector of integers for the coefficients that will be tested
+#    cov.type: type of standard error (to be passed to sandwich::vcovHC)
+#    num.boot: number of null bootstrap samples. Increase to stabilize across runs.
+# Note: results are probabilitistic and may change slightly at every run.
+#
+# Adapted from the p_adjust from from the hdm package, written by Philipp Bach.
+# https://github.com/PhilippBach/hdm_prev/blob/master/R/p_adjust.R
+summary_rw_lm <- function(model, indices=NULL, cov.type="HC2", num.boot=10000) {
+
+  if (is.null(indices)) {
+    indices <- 1:nrow(coef(summary(model)))
+  }
+  # Grab the original t values.
+  summary <- coef(summary(model))[indices,,drop=FALSE]
+  t.orig <- summary[, "t value"]
+
+  # Null resampling.
+  # This is a trick to speed up bootstrapping linear models.
+  # Here, we don't really need to re-fit linear regressions, which would be a bit slow.
+  # We know that betahat ~ N(beta, Sigma), and we have an estimate Sigmahat.
+  # So we can approximate "null t-values" by
+  #  - Draw beta.boot ~ N(0, Sigma-hat) --- note the 0 here, this is what makes it a *null* t-value.
+  #  - Compute t.boot = beta.boot / sqrt(diag(Sigma.hat))
+  Sigma.hat <- vcovHC(model, type=cov.type)[indices, indices]
+  se.orig <- sqrt(diag(Sigma.hat))
+  num.coef <- length(se.orig)
+  beta.boot <- mvrnorm(n=num.boot, mu=rep(0, num.coef), Sigma=Sigma.hat)
+  t.boot <- sweep(beta.boot, 2, se.orig, "/")
+  p.adj <- romano_wolf_correction(t.orig, t.boot)
+
+  result <- cbind(summary[,c(1,2,4),drop=F], p.adj)
+  colnames(result) <- c('Estimate', 'Std. Error', 'Orig. p-value', 'Adj. p-value')
+  result
+}
+```
+
+Now we make the comparisons:
+
+```{r}
+# Valid in randomized and observational settings with unconfoundedness+overlap.
+
+# Using AIPW scores computed above
+ols <- lm(aipw.scores ~ 1 + factor(ranking))
+summary(ols)
+res <- summary_rw_lm(ols, indices=2:num.rankings)
+rownames(res) <- paste("Rank", 2:num.rankings, "- Rank 1") # just for display
+res
+```
+
+Let's do a little more digging. Let's look at how the covariates in our models differ across levels of these tertiles:
+
+```{r}
+## ----avg-cov-cate, fig.align = 'center', fig.cap= "Average covariate values within group (based on CATE estimate ranking)"----
+
+avg_cov_cate <- function(covariate, data=new_afc) {
+      # Looping over covariate names
+      # Compute average covariate value per ranking (with correct standard errors)
+      fmla <- formula(paste0(covariate, "~ 0 + ranking"))
+      ols <- lm(fmla, data=transform(data, ranking=factor(ranking)))
+      ols.res <- coeftest(ols, vcov=vcovHC(ols, "HC2"))
+
+      # Retrieve results
+      avg <- ols.res[,1]
+      stderr <- ols.res[,2]
+
+      # Tally up results
+      data.frame(covariate, avg, stderr, ranking=paste0("Q", seq(num.rankings)),
+                 # Used for coloring
+                 scaling=pnorm((avg - mean(avg))/sd(avg)),
+                 # We will order based on how much variation is 'explain' by the averages
+                 # relative to the total variation of the covariate in the data
+                 variation=sd(avg) / sd(as.matrix(data[,covariate])),
+                 # String to print in each cell in heatmap below
+                 labels=paste0(signif(avg, 3), "\n", "(", signif(stderr, 3), ")")
+                 )
+}
+
+df <- mapply(avg_cov_cate, covariates, SIMPLIFY = FALSE)
+df <- do.call(rbind, df)
+
+# a small optional trick to ensure heatmap will be in decreasing order of 'variation'
+df$covariate <- reorder(df$covariate, order(df$variation))
+
+# plot heatmap
+ggplot(df) +
+    aes(ranking, covariate) +
+    geom_tile(aes(fill = scaling)) + 
+    geom_text(aes(label = labels)) +
+    scale_fill_gradient(low = "#E1BE6A", high = "#40B0A6") +
+    theme_minimal() + 
+    ylab("") + xlab("CATE estimate ranking") +
+    theme(plot.title = element_text(size = 11, face = "bold"),
+          axis.text=element_text(size=11)) 
+```
+
+
+Let's also look at the best linear projection of the mean differences on the covariates. This gives us another sense of which variables explain the heterogeneity in the ATE:
+
+```{r}
+# Best linear projection of the conditional average treatment effect on covariates
+best_linear_projection(forest.tau, covariates_matrix)
+```
+
+But why linear? How does this differ from the variable importance measures we quantified above?
+
+"The slope beta is a measure of how the CATE predictions covary with true CATE. Therefore, the p-value on the estimate of coefficient also acts as an omnibus test for the presence of heterogeneity. If the coefficient is significantly greater than zero, then we can reject the null of no heterogeneity. However, coefficients smaller than 0 are not meaningful and show not be interpreted."
+
+```{r}
+test_calibration(forest.tau)
+```
+
+The above results are telling us something important about the causal forests we fit. First, the `mean.forest.prediction` parameter is `1.3`. If this parameter is 1, this suggests that the average prediction produced by the forest is "correct". 
+
+The second parameter is measures the extent to which the "CATE predictions vary with the true CATE". This is measured by comparing the residual $\tau$'s to the 
+
+
+
+Hannah's stuff:
+```{r, eval = F}
+# Training a Causal Forest for CATE: smoking
+
+
+# Sample Splitting: 
+
+split <- sample(c(FALSE, TRUE), nrow(afc), replace = TRUE)
+afc.train <- afc[split,]
+afc.hold <- afc[!split,]
+
+# Isolate the "treatment" as a matrix
+x<-as.matrix(afc.train$eversmok)
+
+# Isolate the outcome as a matrix
+y<-as.matrix(afc.train$AFC_t) 
+
+# Adding interaction terms
+w<- model.matrix(lm(AFC_t ~ -1 + bmi + white + age + year + DOR + educ1 + mBP_sg + 
+  miBP_sg + mCNP_sg + mCOP_sg + mECPP_sg + mEHHP_sg + mEHP_sg + mEOHP_sg +  mCPP_sg + mEP1_sg + mBZP1_sg + dehp_sg + BPA_sg + BPS_sg + BPF_sg + BP_3_sg + B_PB_sg + M_PB_sg + P_PB_sg + TCS_sg + BDCIPP_sg + DPHP_sg + ipPPP_sg + Hg_new, data=afc.train)) 
+
+
+#Estimate causal forest
+
+cf_smoke <- causal_forest(x, y, w, num.trees = 5000)
+
+
+
+
+
+
+
+
+
+
+
+
+#train causal forest
+#forest_smoke <- causal_forest(x_smoke, y, w_smoke)
+#forest_smoke$predictions
+
+# get ATE
+#average_treatment_effect(forest_smoke, target.sample ="all")
+#?average_treatment_effect
+
+##   estimate    std.err 
+## -0.2463795  0.7234440    
+    
+    
+ 
+  
+  
+  
+  
+  
+  
+  
+  
+
+
+
+
+```
+

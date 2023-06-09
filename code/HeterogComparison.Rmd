@@ -1,0 +1,509 @@
+---
+title: "Heterogeneity Comparison"
+author: "Ashley Naimi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+
+## Assessing n missing for variables
+
+pacman::p_load(
+  rio,          
+  here,         
+  skimr,        
+  tidyverse,     
+  gtsummary,
+  parallel,
+  rstatix,      
+  janitor,      
+  scales,        
+  flextable,    
+  epiR,
+  grf,
+  dplyr,
+  tidyverse,
+  haven,
+  VIM,
+  lmtest,
+  sandwich,
+  MASS
+  )
+
+devtools::install_github('susanathey/causalTree')
+library(causalTree)
+library(grf)
+library(sl3)
+library(AIPW)
+library(tmle3)
+
+
+#Load afc data, double check variables + attributes
+
+new_afc <- read_csv(here("data","afc_clean.csv"))
+
+new_afc$M_PB_sg <- if_else(new_afc$M_PB_sg>quantile(new_afc$M_PB_sg, .9),
+                           quantile(new_afc$M_PB_sg, .9),
+                           new_afc$M_PB_sg)
+
+exposure <- as.matrix(new_afc[,"eversmok"])
+#exposure <- as.matrix(new_afc[,"DOR"])
+
+outcome <- as.matrix(new_afc[,"AFC_t"])
+
+covariates <- c("age", "bmi", "white", "year", "educ1", 
+                "mEP1_sg", "mBZP1_sg", "mCNP_sg","miBP_sg", 
+                "mBP_sg","BP_3_sg", "M_PB_sg", "dehp_sg")
+covariates_matrix <- data.frame(model.matrix(formula(paste0("~", paste0(covariates, collapse="+"))), data=new_afc)[,-1])
+
+covariates_matrix_w <- data.frame(model.matrix(formula(paste0("~", paste0(covariates, collapse="+"), "+ eversmok" )), data=new_afc)[,-1])
+
+```
+
+First, let's estimate the scores from causal_forest, aipw, and tmle:
+
+Start with causal forest
+
+```{r}
+
+set.seed(123)
+
+# Valid randomized data and observational data with unconfoundedness+overlap.
+n <- nrow(new_afc)
+
+# Number of rankings that the predictions will be ranking on
+# (e.g., 2 for above/below median estimated CATE, 5 for estimated CATE quintiles, etc.)
+num.rankings <- 3
+
+# Prepare for data.splitting
+# Assign a fold number to each observation.
+# The argument 'clusters' in the next step will mimick K-fold cross-fitting.
+num.folds <- 10
+folds <- sort(seq(n) %% num.folds) + 1
+
+# Comment or uncomment depending on your setting.
+# Observational setting with unconfoundedness+overlap (unknown assignment probs):
+forest <- causal_forest(X = covariates_matrix, 
+                        Y = outcome, 
+                        W = exposure, 
+                        num.trees = 2000,
+                        honesty = TRUE,
+                        min.node.size = 10,
+                        alpha = .05, 
+                        imbalance.penalty = 0,
+                        stabilize.splits = TRUE,
+                        tune.parameters = "all",
+                        tune.num.trees = 200,
+                        tune.num.reps = 50,
+                        tune.num.draws = 1000,
+                        compute.oob.predictions = TRUE,
+                        num.threads = 10,
+                        seed = 123,
+                        clusters = folds)
+
+# Retrieve out-of-bag predictions.
+# Predictions for observation in fold k will be computed using
+# trees that were not trained using observations for that fold.
+tau.hat <- predict(forest)$predictions
+
+# Rank observations *within each fold* into quantiles according to their CATE predictions.
+ranking <- rep(NA, n)
+for (fold in seq(num.folds)) {
+  tau.hat.quantiles <- quantile(tau.hat[folds == fold], probs = seq(0, 1, by=1/num.rankings))
+  ranking[folds == fold] <- cut(tau.hat[folds == fold], tau.hat.quantiles, include.lowest=TRUE,labels=seq(num.rankings))
+}
+
+new_afc$ranking <- ranking
+
+# Computing AIPW scores.
+e.hat <- forest$W.hat # P[W=1|X]
+m.hat <- forest$Y.hat # E[Y|X]
+
+summary(e.hat)
+
+Y <- outcome
+W <- exposure
+
+mu.hat.0 <- m.hat - e.hat*tau.hat # E[Y|X,W=0] = E[Y|X] - e(X)*tau(X)
+mu.hat.1 <- m.hat + (1 - e.hat)*tau.hat  # E[Y|X,W=1] = E[Y|X] + (1 - e(X))*tau(X)
+
+# AIPW scores
+aipw.scores.cf <- tau.hat + W / e.hat * (Y -  mu.hat.1) - (1 - W) / (1 - e.hat) * (Y -  mu.hat.0)
+
+cf_ate <- average_treatment_effect(forest)
+
+```
+
+Next let's do TMLE:
+
+```{r}
+
+lrnr_mean <- make_learner(Lrnr_mean)
+lrnr_glm <- make_learner(Lrnr_glm)
+
+# ranger learner
+grid_params <- list(num.trees = c(500),
+                    mtry = c(3,4,5),
+                    min.node.size = c(50))
+grid <- expand.grid(grid_params, KEEP.OUT.ATTRS = FALSE)
+lrnr_ranger <- vector("list", length = nrow(grid))
+for(i in 1:nrow(grid)){
+  lrnr_ranger[[i]] <- make_learner(Lrnr_ranger, 
+                                   num.trees=grid[i,]$num.trees, 
+                                   mtry=grid[i,]$mtry,
+                                   min.node.size=grid[i,]$min.node.size)
+}
+
+# glmnet learner
+grid_params <- seq(0,1,by=.25)
+lrnr_glmnet <- vector("list", length = length(grid_params))
+for(i in 1:length(grid_params)){
+  lrnr_glmnet[[i]] <- make_learner(Lrnr_glmnet, alpha = grid_params[i])
+}
+
+# xgboost learner
+grid_params <- list(max_depth = c(4, 6),
+                    eta = c(0.1, 0.2),
+                    nrounds = c(500)
+)
+grid <- expand.grid(grid_params, KEEP.OUT.ATTRS = FALSE)
+lrnr_xgboost <- vector("list", length = nrow(grid))
+for(i in 1:nrow(grid)){
+  lrnr_xgboost[[i]] <- make_learner(Lrnr_xgboost, max_depth=grid[i,]$max_depth, eta=grid[i,]$eta)
+}
+
+# earth learner
+grid_params <- c(3,4,5)
+lrnr_earth <- vector("list", length = length(grid_params))
+for(i in 1:length(grid_params)){
+  lrnr_earth[[i]] <- make_learner(Lrnr_earth, degree = grid_params[i])
+}
+
+sl_ <- make_learner(Stack, unlist(list(lrnr_ranger,
+                                       lrnr_xgboost,
+                                       lrnr_mean,
+                                       lrnr_glm,
+                                       lrnr_earth,
+                                       lrnr_glmnet), 
+                                      recursive = TRUE))
+
+Q_learner <- Lrnr_sl$new(learners = sl_, 
+                         metalearner = Lrnr_nnls$new(convex=T))
+
+g_learner <- Lrnr_sl$new(learners = sl_, 
+                         metalearner = Lrnr_nnls$new(convex=T))
+
+learner_list <- list(Y = Q_learner,
+                     A = g_learner)
+
+ate_spec <- tmle_ATE(treatment_level = 1, 
+                     control_level = 0)
+  
+nodes_ <- list(W = covariates,
+               A = "eversmok", 
+               Y = "AFC_t")
+
+tmle_res <- tmle3(ate_spec, 
+                  new_afc, 
+                  nodes_, 
+                  learner_list)
+
+tmle.scores <- tmle_res$estimates[[1]]$IC
+
+Q_fit <- tmle_res$likelihood$factor_list[["Y"]]$learner
+Q_fit$fit_object$full_fit$learner_fits$Lrnr_nnls_TRUE
+
+```
+
+Let's do TMLE again:
+
+```{r}
+
+library(SuperLearner)
+
+mean_learner <- "SL.mean"
+glm_learner <- "SL.glm"
+
+# ranger learner
+ranger_learner <- create.Learner("SL.ranger",
+                                 params = list(num.trees = 500, 
+                                               min.node.size = 50),
+                                 tune = list(mtry = c(3,4,5)))
+
+# glmnet learner
+glmnet_learner <- create.Learner("SL.glmnet",
+                                 tune = list(alpha = seq(0,1,.25)))
+
+# xgboost learner
+xgboost_learner <- create.Learner("SL.xgboost",
+                                 params = list(nrounds = 500),
+                                 tune = list(max_depth = c(4,6),
+                                             eta = c(.1,.2)))
+
+# earth learner
+earth_learner <- create.Learner("SL.earth",
+                                tune = list(degree = c(3,4,5)))
+
+sl_lib <- c(mean_learner, 
+            glm_learner, 
+            ranger_learner$names, 
+            glmnet_learner$names, 
+            xgboost_learner$names, 
+            earth_learner$names)
+
+# Specify the number of folds for V-fold cross-validation
+# folds= 5
+## split data into 5 groups for 5-fold cross-validation 
+## we do this here so that the exact same folds will be used in 
+## both the SL fit with the R package, and the hand coded SL
+
+num.folds <- 10
+n <- nrow(new_afc)
+
+fold_index <- split(1:n,1:num.folds)
+
+# splt<-lapply(1:folds,function(ind) D[index[[ind]],])
+
+options(mc.cores = detectCores() - 2)
+
+getOption("mc.cores")
+
+new_dat <- data.frame(new_afc)[,c(names(covariates_matrix_w),"AFC_t")]
+
+fit_mu <- mcSuperLearner(Y = new_dat$AFC_t,
+                         X = data.frame(new_dat)[,names(covariates_matrix_w)], 
+                         method = "method.NNLS", 
+                         family = gaussian,
+                         SL.library = sl_lib,
+                         cvControl = list(V = num.folds, validRows = fold_index),
+                         control = list(saveCVFitLibrary = T),
+                         verbose = T)
+
+fit_pi <- mcSuperLearner(Y = new_dat$eversmok,
+                         X = data.frame(new_dat)[,names(covariates_matrix)],
+                         method = "method.NNLS", 
+                         family = binomial,
+                         SL.library = sl_lib,
+                         cvControl = list(V = num.folds, validRows = fold_index),
+                         control = list(saveCVFitLibrary = T),
+                         verbose = T)
+
+new_dat$pscore <- fit_pi$SL.predict
+
+new_dat$clever_covariate <- as.numeric((new_dat$eversmok/new_dat$pscore) - (1 - new_dat$eversmok)/(1 - new_dat$pscore))
+
+new_dat$clever0 <- as.numeric(1/(1 - new_dat$pscore))
+new_dat$clever1 <- as.numeric(1/new_dat$pscore)
+
+logit <- function(x){log(x)/(1 - log(x))}
+
+new_dat$mu_hat <- fit_mu$SL.predict
+
+new_dat$mu_hat1 <- predict(fit_mu, 
+                           newdata = base::transform(new_dat[,names(covariates_matrix_w)], eversmok = 1), 
+                           onlySL=T)$pred
+
+new_dat$mu_hat0 <- predict(fit_mu, 
+                           newdata = base::transform(new_dat[,names(covariates_matrix_w)], eversmok = 0), 
+                           onlySL=T)$pred
+
+a <- min(new_dat$AFC_t)
+b <- max(new_dat$AFC_t)
+
+new_dat$outcome_scaled <- (new_dat$AFC_t - a)/(b - a)
+new_dat$mu_hat_scaled <- as.numeric((new_dat$mu_hat - a)/(b - a))
+
+least_favorable_sm <-
+  glm(
+    outcome_scaled ~ -1 + 
+      clever_covariate +
+      offset(logit(mu_hat_scaled)),
+      data = new_dat,
+      family = binomial("logit")
+      )
+
+summary(least_favorable_sm)
+
+pred1_dat <- data.frame(clever_covariate = new_dat$clever1,
+                        mu_hat_scaled = new_dat$mu_hat1)
+
+new_dat$Q1_scaled <- predict(least_favorable_sm, 
+                             newdata = pred1_dat,
+                      type = "response")
+Q1 <- new_dat$Q1_scaled*(b-a) + a
+
+pred0_dat <- data.frame(clever_covariate = new_dat$clever0,
+                        mu_hat_scaled = new_dat$mu_hat0)
+
+new_dat$Q0_scaled <- predict(least_favorable_sm, 
+                             newdata = pred0_dat,
+                      type = "response")
+Q0 <- new_dat$Q0_scaled*(b-a) + a
+
+mean(Q1 - Q0)
+
+library(tmle)
+tmle_res <- tmle(Y = new_dat$AFC_t,
+     A = new_dat$eversmok,
+     W = new_dat[,names(covariates_matrix)],
+     family = "gaussian",
+     Q.SL.library = sl_lib,
+     g.SL.library = sl_lib,
+     V=10)
+
+summary(tmle_res)
+
+tmle_res2 <- tmle(Y = new_dat$AFC_t,
+     A = new_dat$eversmok,
+     W = new_dat[,names(covariates_matrix)],
+     family = "gaussian",
+     Q = cbind(new_dat$mu_hat0, new_dat$mu_hat1),
+     g1W = new_dat$pscore,
+     Q.SL.library = sl_lib,
+     g.SL.library = sl_lib,
+     V=10)
+
+summary(tmle_res)
+
+
+
+## aipw
+aipw_res <- mean(((2*new_dat$eversmok - 1)*(new_dat$AFC_t - new_dat$mu_hat))/((2*new_dat$eversmok - 1)*new_dat$pscore + (1 - new_dat$eversmok)) + (new_dat$mu_hat1 - new_dat$mu_hat0))
+
+aipw_res
+
+# tmle(Y = new_afc$AFC_t,
+#      A = new_afc$eversmok,
+#      W = covariates_matrix,
+#      Q.SL.library = sl_lib,
+#      g.SL.library = sl_lib,
+#      family = "gaussian",
+#      V = 10)
+
+# fold_data <- NULL
+# for(i in 1:num.folds){
+#   fold_data <- rbind(fold_data,
+#                      cbind(i,unlist(fit_mu$folds[i])))
+# }
+# nrow(fold_data)
+# colnames(fold_data) <- c("folds", "row_number")
+# rownames(fold_data) <- NULL
+# 
+# fold_data <- data.frame(fold_data)
+
+
+
+```
+
+Next let's do aipw:
+
+```{r, eval = F}
+
+# don't run this code chunk to save time
+# instead, load pre-run rds file below that contains
+# stored results.
+
+library(npcausal)
+library(SuperLearner)
+
+mean_learner <- "SL.mean"
+glm_learner <- "SL.glm"
+
+# ranger learner
+ranger_learner <- create.Learner("SL.ranger",
+                                 params = list(num.trees = 500, 
+                                               min.node.size = 50),
+                                 tune = list(mtry = c(3,4,5)))
+
+# glmnet learner
+glmnet_learner <- create.Learner("SL.glmnet",
+                                 tune = list(alpha = seq(0,1,.25)))
+
+# xgboost learner
+xgboost_learner <- create.Learner("SL.xgboost",
+                                 params = list(nrounds = 500),
+                                 tune = list(max_depth = c(4,6),
+                                             eta = c(.1,.2)))
+
+# earth learner
+earth_learner <- create.Learner("SL.earth",
+                                tune = list(degree = c(3,4,5)))
+
+sl_lib <- c(mean_learner, 
+            glm_learner, 
+            ranger_learner$names, 
+            glmnet_learner$names, 
+            xgboost_learner$names, 
+            earth_learner$names)
+
+aipw_res <- ate(y=outcome,
+                a=exposure,
+                x=covariates_matrix,
+                nsplits = 10,
+                sl.lib = sl_lib
+                )
+
+saveRDS(aipw_res, file = here("data","npcausal_aipw.rds"))
+
+```
+
+
+```{r}
+
+aipw_res <- readRDS(here("data","npcausal_aipw.rds"))
+
+aipw_res$res
+
+aipw.scores <- aipw_res$ifvals$a1 - aipw_res$ifvals$a0
+
+```
+
+average treatment effect from each approach:
+
+```{r, eval=T}
+
+res_ate <- tibble(Estimator = c("Causal Forest", "TMLE", "AIPW"), 
+                  ATE = c(cf_ate[1], 
+                          tmle_res$summary$tmle_est, 
+                          aipw_res$res$est[3]),
+                  SE = c(cf_ate[2], 
+                          tmle_res$summary$se, 
+                          aipw_res$res$se[3]),
+                  LCL = c(cf_ate[1] - 1.96*cf_ate[2], 
+                          tmle_res$summary$tmle_est - 1.96*tmle_res$summary$se, 
+                          aipw_res$res$est[3] - 1.96*aipw_res$res$se[3]),
+                  UCL = c(cf_ate[1] + 1.96*cf_ate[2], 
+                          tmle_res$summary$tmle_est + 1.96*tmle_res$summary$se, 
+                          aipw_res$res$est[3] + 1.96*aipw_res$res$se[3]))
+
+```
+
+Table of ATE estimates:
+
+```{r, eval=T}
+knitr::kable(res_ate)
+```
+
+# Hetergeneous Treatment Effects
+
+Let's explore heterogeneity now. 
+
+```{r}
+
+new_afc <- new_afc %>% 
+  mutate(score_cf = aipw.scores.cf, 
+         score_tmle = tmle.scores,
+         score_aipw = aipw.scores) %>% 
+  dplyr::select(id, eversmok, DOR, AFC_t, age, bmi, white, year, educ1, 
+                mEP1_sg, mBZP1_sg, mCNP_sg, miBP_sg, 
+                mBP_sg, BP_3_sg, M_PB_sg, dehp_sg, score_cf, score_tmle,
+                score_aipw)
+
+head(new_afc)
+
+```
+
+
+
+

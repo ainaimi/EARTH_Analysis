@@ -1,0 +1,127 @@
+---
+title: "afc CATE Data Management"
+author: "Hannah Mandle and Ashley Naimi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+
+## Assessing n missing for variables
+
+pacman::p_load(
+  rio,          
+  here,         
+  skimr,        
+  tidyverse,     
+  gtsummary,    
+  rstatix,      
+  janitor,      
+  scales,        
+  flextable,    
+  epiR,
+  grf,
+  dplyr,
+  tidyverse,
+  haven,
+  VIM,
+  lmtest,
+  sandwich,
+  MASS
+  )
+
+
+#Load afc data, double check variables + attributes
+
+afc <- read_sas(here("data","afc_final.sas7bdat"))
+
+skim(afc)
+
+#forgot to impute Hg, doing that below 
+
+afc = afc %>%
+  mutate(
+    Hg_new = case_when(
+      is.na(Hg) == TRUE ~ mean(Hg, na.rm = TRUE),
+      is.na(Hg) == FALSE ~ Hg))
+
+```
+
+Generally, what do the missing data look like?
+
+```{r}
+
+VIM::aggr(afc)
+
+```
+That's alot of missing data. Which variables have the most?:
+
+```{r}
+miss_prop <- function(x){
+  mean(is.na(x), na.rm = F)
+}
+
+sort(apply(afc, 2, miss_prop), decreasing = T)
+
+```
+
+For now, let's remove variables with > 12% missingness:
+
+```{r}
+
+missing_indexer <- as.logical(apply(afc, 2, miss_prop)<.12)
+
+new_afc <- afc[,missing_indexer]
+
+ncol(afc)
+ncol(new_afc)
+
+```
+And let's do a simple mean imputation on the remaining:
+
+```{r}
+
+mode_function <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+new_afc <- new_afc %>% 
+  mutate_if(is.numeric, ~replace_na(.,mean(., na.rm = TRUE)))
+
+```
+
+Let's check to see if it worked:
+
+```{r}
+
+apply(new_afc, 2, miss_prop) # it seems only dates are missing
+
+table(new_afc$white)
+
+tibble(new_afc)
+
+VIM::aggr(new_afc)
+```
+
+What does our outcome look like:
+
+```{r}
+hist(new_afc$AFC_t)
+summary(new_afc$AFC_t)
+```
+
+What do our exposures look like:
+
+```{r}
+table(new_afc$eversmok)
+
+table(new_afc$DOR)
+```
+
+Let's work with these data.
+
+```{r}
+write_csv(new_afc, here("data","afc_clean.csv"))
+```
+
