@@ -5,7 +5,7 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
-This markdown document contains the code needed to reproduce results for the manuscript entitled "...". Here, we deploy causal forests and the DR learner to estimate the ATE and the CATE for the relation between ever smoking status and a measure of ovarian reserve in 775 women from The Environment and Reproductive Health (EARTH) Study. We start by installing and loading relevant libraries:
+This markdown document contains the code needed to reproduce results for the manuscript entitled "The Effect of Diminished Ovarian Reserve and Antral Follicle Counts in the EARTH Study: Using Machine Learning to Identify Environmental Modifiers". Here, we deploy causal forests and the DR learner to estimate the ATE and the CATE for the relation between ever smoking status and a measure of ovarian reserve in 775 women from The Environment and Reproductive Health (EARTH) Study. We start by installing and loading relevant libraries:
 
 ```{r load-packages}
 
@@ -14,24 +14,18 @@ This markdown document contains the code needed to reproduce results for the man
 pacman::p_load(
   rio,          
   here,         
-  skimr,        
-  tidyverse,     
-  gtsummary,
-  parallel,
-  rstatix,      
-  janitor,      
-  scales,        
-  dplyr,
+  skimr,    
   tidyverse,
+  parallel,
+  scales,
   haven,
   lmtest,
   sandwich,
-  MASS,
   grf,
   SuperLearner,
   pROC,
-  gridExtra,
-  vip
+  broom,
+  xtable
   )
 
 # set the theme for figures
@@ -39,7 +33,8 @@ thm <- theme_classic() +
   theme(
     legend.position = "top",
     legend.background = element_rect(fill = "transparent", colour = NA),
-    legend.key = element_rect(fill = "transparent", colour = NA)
+    legend.key = element_rect(fill = "transparent", colour = NA),
+    text = element_text(size = 20)
   )
 theme_set(thm)
 
@@ -53,26 +48,87 @@ Next, we load the EARTH data, named `afc_clean`, and construct and code relevant
 afc_clean <- read_csv(here("data","afc_clean.csv"))
 new_afc <- read_csv(here("data","afc_clean.csv"))
 
+afc_clean <- afc_clean %>% mutate(age_bin = as.numeric(age>=35))
+new_afc <- new_afc %>% mutate(age_bin = as.numeric(age>=35))
+
+names(afc_clean)
+
 # the relevant data:
 
-the_data <- c("AFC_t", "DOR", 
-              "age", "bmi", "white", "educ1", "eversmok", "previousIUI", "previousIVF", "gravid",
+the_data <- c("AFC_t", "year", #"DOR",
+              "age_bin", "bmi", "white", "educ1", "eversmok", "previousIUI", "previousIVF", "gravid",
               "mEP1_sg", "mBZP1_sg", "mCNP_sg","miBP_sg",
               "mBP_sg","BP_3_sg", "M_PB_sg", "dehp_sg", 
-              "BPA", "mCOP", "mCPP", "B_PB", "P_PB", "Hg")
+              "BPA_sg", "mCOP_sg", "mCPP_sg", "B_PB_sg", "P_PB_sg", "Hg")
 
 env_vars <- c("mEP1_sg", "mBZP1_sg", "mCNP_sg","miBP_sg",
               "mBP_sg","BP_3_sg", "M_PB_sg", "dehp_sg", 
-              "BPA", "mCOP", "mCPP", "B_PB", "P_PB", "Hg")
+              "BPA_sg", "mCOP_sg", "mCPP_sg", "B_PB_sg", "P_PB_sg", "Hg")
 
 skimr::skim(new_afc[,the_data])
 
+```
+
+
+```{r}
+# look at the distribution of the env data
+
+afc <- afc_clean %>% rename(PPB     = P_PB, 
+                            PPBsg   = P_PB_sg,
+                            mCNPsg  = mCNP_sg,
+                            mBPsg   = mBP_sg,
+                            AFCt    = AFC_t,
+                            mEP1sg  = mEP1_sg, 
+                            mBZP1sg = mBZP1_sg,
+                            miBPsg  = miBP_sg,
+                            BP3sg   = BP_3_sg, 
+                            MPBsg   = M_PB_sg, 
+                            dehpsg  = dehp_sg,
+                            BPAsg   = BPA_sg, 
+                            mCOPsg  = mCOP_sg, 
+                            mCPPsg  = mCPP_sg, 
+                            BPBsg   = B_PB_sg)
+
+afc %>% summarise(across(c(AFCt, year, PPB, PPBsg, mCNP, mCNPsg, mBP, mBPsg, Hg,
+                           PPB, PPBsg, mCNPsg, mBPsg, AFCt, mEP1sg, mBZP1sg, miBPsg,
+                           BP3sg, MPBsg, dehpsg, BPAsg, mCOPsg, mCPPsg, BPBsg), .fns = 
+                     list(min = min,
+                          median = median,
+                          mean = mean,
+                          stdev = sd,
+                          q25 = ~quantile(., 0.25),
+                          q75 = ~quantile(., 0.75),
+                          max = max))) %>% 
+  round(., digits = 2) %>% 
+  pivot_longer(everything(), names_sep="_", names_to=c('variable', '.value'))
+
+```
+
+```{r}
+trunc_func <- function(x){
+  x <- if_else(x > quantile(x, .9),
+               x,
+               x)
+}
+
+new_afc[,env_vars] <- apply(new_afc[,env_vars], 2, trunc_func)
+afc_clean[,env_vars] <- apply(afc_clean[,env_vars], 2, trunc_func)
+
+plot(new_afc$P_PB_sg, afc_clean$P_PB_sg)
+
+hist(afc_clean$BP_3_sg)
+
 # create exposure variable
 #exposure <- as.matrix(new_afc[,"eversmok"])
-exposure <- as.matrix(new_afc[,"DOR"])
+exposure <- as.matrix(new_afc[,"age_bin"])
 
 # create outcome variable
 outcome <- as.matrix(new_afc[,"AFC_t"])
+
+hist(outcome)
+
+table(as.numeric(outcome > 30))
+mean(as.numeric(outcome > 30))
 
 # identify and transform categorical
 categorical_vars <- new_afc[,c("white", "educ1", "eversmok", "gravid", "previousIUI", "previousIVF")]
@@ -81,10 +137,10 @@ categorical_vars <- categorical_vars %>%
   mutate(educ1 = factor(educ1))
 
 # identify and transform continuous
-continuous_vars <- new_afc[,c("age", "bmi",
-                              "mEP1_sg", "mBZP1_sg", "mCNP_sg","miBP_sg", 
-                              "mBP_sg","BP_3_sg", "M_PB_sg", "dehp_sg",
-                              "BPA", "mCOP", "mCPP", "B_PB", "P_PB", "Hg")]
+continuous_vars <- new_afc[,c("bmi", "year",
+                              "mEP1_sg", "mBZP1_sg", "mCNP_sg","miBP_sg",
+                              "mBP_sg","BP_3_sg", "M_PB_sg", "dehp_sg", 
+                              "BPA_sg", "mCOP_sg", "mCPP_sg", "B_PB_sg", "P_PB_sg", "Hg")]
 
 continuous_vars
 
@@ -112,7 +168,7 @@ covariates <- c(names(continuous_vars), names(categorical_vars))
 covariates_matrix <- data.frame(model.matrix(formula(paste0("~", paste0(covariates, collapse="+"))), data=new_afc)[,-1])
 
 # use covariate set to construct design matrix that includes exposure
-covariates_matrix_w <- data.frame(model.matrix(formula(paste0("~", paste0(covariates, collapse="+"), "+ DOR" )), data=new_afc)[,-1])
+covariates_matrix_w <- data.frame(model.matrix(formula(paste0("~", paste0(covariates, collapse="+"), "+ age_bin" )), data=new_afc)[,-1])
 
 ```
 
@@ -165,10 +221,9 @@ names(VarImpRf) <- c("Variable", "Importance")
 
 ```
 
-
 We can evaluate the performance of the random forest algorithm used to construct the ATE estimate via diagnostic plotting:
 
-```{r diag-plots-forest}
+```{r }
 plot_dat_mu <- tibble(Predicted = forest$Y.hat,
                    Observed = outcome)
 
@@ -239,55 +294,6 @@ Next, we'll construct an AIPW estimator for the ATE using stacking (SuperLearner
 
 ```{r super-learner-run}
 
-
-## test
-## 
-# 
-# screen.glmnet <- function(Y, X, family, alpha = 1, minscreen = 2, nfolds = 10, nlambda = 100,  ...) {
-#   .SL.require('glmnet')
-#   if(!is.matrix(X)) {
-#     X <- model.matrix(~ -1 + ., X)
-#   }
-#   fitCV <- glmnet::cv.glmnet(x = X, y = Y, lambda = NULL, type.measure = 'deviance', nfolds = nfolds, family = family$family, alpha = alpha, nlambda = nlambda)
-#   whichVariable <- (as.numeric(coef(fitCV$glmnet.fit, s = fitCV$lambda.min))[-1] != 0)
-#   # the [-1] removes the intercept
-#   if (sum(whichVariable) < minscreen) {
-#       warning("fewer than minscreen variables passed the glmnet screen, increased lambda to allow minscreen variables")
-# 	    sumCoef <- apply(as.matrix(fitCV$glmnet.fit$beta), 2, function(x) sum((x != 0)))
-# 	    newCut <- which.max(sumCoef >= minscreen)
-# 	    whichVariable <- (as.matrix(fitCV$glmnet.fit$beta)[, newCut] != 0)
-#   }
-#   return(whichVariable)
-# }
-# 
-# 
-# 
-# fitCV <- glmnet::cv.glmnet(x = model.matrix(~ -1 + ., covariates_matrix_w_augment), 
-#                            y = outcome, 
-#                            lambda = NULL, 
-#                            type.measure = 'deviance', 
-#                            nfolds = 10, 
-#                            family = "gaussian", 
-#                            alpha = 1, 
-#                            nlambda = 100)
-# 
-# coef(fitCV, s = fitCV$lambda.min)
-# 
-#   whichVariable <- (as.numeric(coef(fitCV$glmnet.fit, s = fitCV$lambda.min))[-1] != 0)
-#   
-#   if (sum(whichVariable) < minscreen) {
-#       warning("fewer than minscreen variables passed the glmnet screen, increased lambda to allow minscreen variables")
-# 	    sumCoef <- apply(as.matrix(fitCV$glmnet.fit$beta), 2, function(x) sum((x != 0)))
-# 	    newCut <- which.max(sumCoef >= minscreen)
-# 	    whichVariable <- (as.matrix(fitCV$glmnet.fit$beta)[, newCut] != 0)
-#   }
-# 
-#   names(covariates_matrix_w_augment)[whichVariable]
-#   
-## 
-## end test
-
-
 mean_learner <- "SL.mean"
 glm_learner <- "SL.glm"
 
@@ -300,6 +306,8 @@ ranger_learner <- create.Learner("SL.ranger",
 # glmnet learner
 glmnet_learner <- create.Learner("SL.glmnet",
                                  tune = list(alpha = seq(0,1,.25)))
+
+ 
 
 # xgboost learner
 xgboost_learner <- create.Learner("SL.xgboost",
@@ -346,9 +354,9 @@ sl_lib <- c(ranger_learner$names,
             earth_learner$names,
             list(mean_learner,
                  glm_learner, 
-                 # c(ranger_learner$names[1], "screen.glmnet1"),
-                 # c(ranger_learner$names[2], "screen.glmnet1"),
-                 # c(ranger_learner$names[3], "screen.glmnet1"),
+                 c(ranger_learner$names[1], "screen.glmnet1"),
+                 c(ranger_learner$names[2], "screen.glmnet1"),
+                 c(ranger_learner$names[3], "screen.glmnet1"),
                  c(glmnet_learner$names[1], "screen.glmnet1"),
                  c(glmnet_learner$names[2], "screen.glmnet1"),
                  c(glmnet_learner$names[3], "screen.glmnet1"),
@@ -373,30 +381,39 @@ options(mc.cores = detectCores() - 2)
 
 getOption("mc.cores")
 
-augment_data <- covariates_matrix_w[,env_vars]*covariates_matrix_w$DOR
-names(augment_data) <- paste0(names(augment_data),"_DOR")
+augment_data <- covariates_matrix_w[,env_vars]*covariates_matrix_w$age_bin
+names(augment_data) <- paste0(names(augment_data),"_age_bin")
 
 covariates_matrix_w_augment <- cbind(covariates_matrix_w, augment_data)
 
-fit_mu <- CV.SuperLearner(Y = outcome,
-                          X = covariates_matrix_w_augment, 
-                          method = "method.NNLS", 
-                          family = gaussian,
-                          SL.library = sl_lib,
-                          cvControl = list(V = num.folds, validRows = fold_index),
-                          control = list(saveCVFitLibrary = T),
-                          parallel = "multicore",
-                          verbose = T)
+if(file.exists(here("misc","fit_mu.RDS"))){
+  fit_mu <- readRDS(here("misc","fit_mu.RDS"))
+} else{
+  fit_mu <- CV.SuperLearner(Y = outcome,
+                            X = covariates_matrix_w_augment, 
+                            method = "method.NNLS", 
+                            family = gaussian,
+                            SL.library = sl_lib,
+                            cvControl = list(V = num.folds, validRows = fold_index),
+                            control = list(saveCVFitLibrary = T),
+                            parallel = "multicore",
+                            verbose = T)
+  saveRDS(object = fit_mu, file = here("misc","fit_mu.RDS"))
+}
 
-fit_pi <- CV.SuperLearner(Y = exposure,
-                          X = covariates_matrix,
-                          method = "method.NNLS", 
-                          family = binomial,
-                          SL.library = sl_lib,
-                          cvControl = list(V = num.folds, validRows = fold_index),
-                          control = list(saveCVFitLibrary = T),
-                          parallel = "multicore",
-                          verbose = T)
+if(file.exists(here("misc","fit_pi.RDS"))){
+  fit_pi <- readRDS(here("misc","fit_pi.RDS"))
+} else{
+  fit_pi <- CV.SuperLearner(Y = exposure,
+                            X = covariates_matrix,
+                            method = "method.NNLS", 
+                            family = binomial,
+                            SL.library = sl_lib,
+                            cvControl = list(V = num.folds, validRows = fold_index),#, stratifyCV = TRUE),
+                            control = list(saveCVFitLibrary = T),
+                            parallel = "multicore",
+                            verbose = T)
+}
 ```
 
 Let's explore the fit for each of these stacked algorithms. First, we'll examine the stacking results for the model fits:
@@ -474,11 +491,10 @@ ggplot(VarImp) +
 ## create separate variable list for cf versus drl
 
 var_names_rf <- unique(VarImpRf[order(-VarImpRf$Importance),]$Variable)
-var_names_rf <- var_names_rf[var_names_rf %in% env_vars][1:14] # to save for later...
+var_names_rf <- var_names_rf[var_names_rf %in% env_vars] # to save for later...
 
 var_names_sl <- unique(VarImpSL[order(-VarImpSL$Importance),]$Variable)
-var_names_sl <- var_names_sl[var_names_sl %in% env_vars][1:14] # to save for later...
-
+var_names_sl <- var_names_sl[var_names_sl %in% env_vars] # to save for later...
 ```
 
 We'll also construct the same diagnostics for the super learner models. 
@@ -546,7 +562,7 @@ for(i in 1:num.folds){
 mu_hat1 <- rbind(mu_hat1, 
                  predict(fit_mu$AllSL[[i]],
                    newdata = base::transform(
-                     covariates_matrix_w_augment[fold_index[[i]],], DOR = 1), 
+                     covariates_matrix_w_augment[fold_index[[i]],], age_bin = 1), 
                            onlySL=T)$pred)
 }
 
@@ -555,7 +571,7 @@ for(i in 1:num.folds){
 mu_hat0 <- rbind(mu_hat0, 
                  predict(fit_mu$AllSL[[i]],
                    newdata = base::transform(
-                     covariates_matrix_w_augment[fold_index[[i]],], DOR = 0), 
+                     covariates_matrix_w_augment[fold_index[[i]],], age_bin = 0), 
                            onlySL=T)$pred)
 }
 
@@ -586,11 +602,12 @@ aipw_ate <- cbind(t(aipw_ate),
 colnames(aipw_ate) <- c("estimate", "std.err", "LCL", "UCL")
 
 covariates_matrix$aipw_score <- aipw_score
-covariates_matrix$forest_score <- get_scores(forest)
+forest_score <- covariates_matrix$forest_score <- get_scores(forest)
+
 
 ```
 
-Our first set of results are basically estimates of the average treatment effect using singly robust causal forests, and double robust AIPW. Both approaches deployed a form of cross-fitting, so that the same observations were not used to fit the models and then construct the estimates.
+Our first set of results are basically estimates of the average treatment effect using causal forests and AIPW. Both approaches deployed a form of cross-fitting, so that the same observations were not used to fit the models and then construct the estimates.
 
 The overall ATE results are as follows:
 
@@ -602,6 +619,29 @@ res_ate <-  rbind(cf_ate,
 row.names(res_ate) <- c("Causal Forest", "AIPW with Stacking")
 
 res_ate
+
+# construct LaTeX Table:
+xtable(res_ate)
+
+```
+
+Test to see if the ATEs from causal forest versus AIPW are different:
+
+```{r}
+
+diff_eff <- aipw_ate[1] - cf_ate[1]
+
+se_diff <- sqrt(var(aipw_score) + var(forest_score) - 2*cov(aipw_score, forest_score))/sqrt(n)
+
+diff_eff
+
+lcl <- diff_eff - 1.96*se_diff
+ucl <- diff_eff + 1.96*se_diff
+
+c(diff_eff, lcl, ucl)
+
+2*pnorm(abs(diff_eff/se_diff), lower.tail=FALSE)
+2*pt( abs(diff_eff/se_diff), df = n-1, lower.tail=FALSE)
 
 ```
 
@@ -633,7 +673,7 @@ The slope `differential.forest.prediction` is a measure of how the CATE predicti
 
 ```{r rf-blp}
 
-best_linear_projection(forest, covariates_matrix[,c(var_names_rf)])
+blp_forest <- best_linear_projection(forest, covariates_matrix[,c(var_names_rf)])
 
 ```
 
@@ -642,104 +682,36 @@ Let's look at a similar best linear projection with the DR learner approach
 ```{r sl-blp}
 score_dat <- data.frame(aipw_score, covariates_matrix[,c(var_names_sl)])
 score_fit <- lm(aipw_score ~ ., data = score_dat)
-coeftest(score_fit, vcov = vcovHC(score_fit, type = "HC3"))
+
+blp_aipw <- coeftest(score_fit, vcov = vcovHC(score_fit, type = "HC3"))
 
 ```
 
-```{r dr-learner-dose-response-pb}
+```{r blp-res}
 
-ss10 <- smooth.spline(covariates_matrix$P_PB, 
-                      covariates_matrix$aipw_score, 
-                      df = 3,
-                      cv = F
-                      )
-ss11 <- smooth.spline(covariates_matrix$P_PB, 
-                      covariates_matrix$forest_score, 
-                      df = 3,
-                      cv = F
-                      )
+blp_forest <- tidy(blp_forest)[,c(1,2,3,4,5)]
+blp_aipw <- tidy(blp_aipw)[,c(1,2,3,4,5)]
 
-row1 <- data.frame(
-  PB = as.matrix(ss10$x), 
-  CATE = as.matrix(ss10$y), 
-  Method = as.matrix(rep("DR Learner", length(ss10$x)))
-  )
-row2 <- data.frame(
-  PB = as.matrix(ss10$x), 
-  CATE = as.matrix(ss11$y), 
-  Method = as.matrix(rep("Causal Forest", length(ss10$x)))
-  )
+names(blp_forest) <- c("term", "est.forest", "se.forest", "test.stat.forest", "p.forest")
+names(blp_aipw) <- c("term", "est.aipw", "se.aipw", "test.stat.aipw", "p.aipw")
 
-plot_dat <- rbind(
-  rbind(row1,row2)
-  )
+blp_res <- left_join(blp_forest,
+                     blp_aipw,
+                     by = "term")
 
-plot_dat$PB <- plot_dat$PB*(max(afc_clean$P_PB) - min(afc_clean$P_PB)) + min(afc_clean$P_PB)
+blp_res <- blp_res %>% 
+  filter(term != "(Intercept)") %>% 
+  arrange(desc(abs((test.stat.forest+test.stat.aipw)/2)))
 
-ggplot() +
-  geom_rug(data = afc_clean, 
-           aes(x = P_PB),
-           length = unit(2, "mm")) +
-  geom_line(data = plot_dat,
-            aes(y = CATE,
-                x = PB,
-                group = Method,
-                color = Method)) +
-  scale_y_continuous(expand = c(0,0)) +
-  scale_x_continuous(expand = c(0,0)) +
-  xlab("Blood P_PB Concentrations") +
-  ylab("Conditional Average Treatment Effect")
+blp_res <- blp_res[, -c(4,8)]
 
-```
-
-
-
-```{r dr-learner-dose-response-mcnp}
-
-ss10 <- smooth.spline(covariates_matrix$mCNP_sg, 
-                      covariates_matrix$aipw_score, 
-                      df = 3,
-                      cv = F
-                      )
-ss11 <- smooth.spline(covariates_matrix$mCNP_sg, 
-                      covariates_matrix$forest_score, 
-                      df = 3,
-                      cv = F
-                      )
-
-row1 <- data.frame(
-  mCNP = as.matrix(ss10$x), 
-  CATE = as.matrix(ss10$y), 
-  Method = as.matrix(rep("DR Learner", length(ss10$x)))
-  )
-row2 <- data.frame(
-  mCNP = as.matrix(ss10$x), 
-  CATE = as.matrix(ss11$y), 
-  Method = as.matrix(rep("Causal Forest", length(ss10$x)))
-  )
-
-plot_dat <- rbind(
-  rbind(row1,row2)
-  )
-
-plot_dat$mCNP <- plot_dat$mCNP*(max(afc_clean$mCNP_sg) - min(afc_clean$mCNP_sg)) + min(afc_clean$mCNP_sg)
-
-ggplot() +
-  geom_rug(data = afc_clean, 
-           aes(x = mCNP),
-           length = unit(2, "mm")) +
-  geom_line(data = plot_dat,
-            aes(y = CATE,
-                x = mCNP,
-                group = Method,
-                color = Method)) +
-  scale_y_continuous(expand = c(0,0)) +
-  scale_x_continuous(expand = c(0,0)) +
-  xlab("Blood mCNP Concentrations") +
-  ylab("Conditional Average Treatment Effect")
+# construct LaTeX Table:
+print(xtable(blp_res), include.rownames=FALSE)
 
 
 ```
+
+Let's focus on the modifying effect of Hg, mBP, miBP, BPA
 
 ```{r dr-learner-dose-response-hg}
 
@@ -753,6 +725,10 @@ ss11 <- smooth.spline(covariates_matrix$Hg,
                       df = 3,
                       cv = F
                       )
+
+strat_numom <- numom %>%
+                  group_by(pree_acog) %>%
+                  sample_frac(size=.15)
 
 row1 <- data.frame(
   Hg = as.matrix(ss10$x), 
@@ -771,34 +747,174 @@ plot_dat <- rbind(
 
 plot_dat$Hg <- plot_dat$Hg*(max(afc_clean$Hg) - min(afc_clean$Hg)) + min(afc_clean$Hg)
 
-ggplot() +
+f1 <- ggplot() +
   geom_rug(data = afc_clean, 
-           aes(x = Hg),
+           aes(x = jitter(Hg, 3)),
            length = unit(2, "mm")) +
-  geom_point(data = plot_dat,
+  geom_line(data = plot_dat,
             aes(y = CATE,
                 x = Hg,
                 group = Method,
                 color = Method)) +
-  scale_y_continuous(expand = c(0,0)) +
-  scale_x_continuous(expand = c(0,0)) +
-  xlab("Blood Hg Concentrations") +
-  ylab("Conditional Average Treatment Effect")
-
-test_gam = mgcv::gam(aipw_score ~ s(Hg, bs = "cr"), 
-                     data = covariates_matrix,
-                     method = "GACV.Cp")
-
-hg_new = data.frame(Hg = seq(0,1,.1))
-
-predict(test_gam, newdata = hg_new, se.fit = T)
-
-test_gam = mgcv::gam(forest_score ~ s(Hg, bs = "cr"), 
-                     data = covariates_matrix,
-                     method = "GACV.Cp")
-
-hg_new = data.frame(Hg = seq(0,1,.1))
-
-predict(test_gam, newdata = hg_new, se.fit = T)
+  # geom_point(data = plot_dat,
+  #            aes(y = CATE,
+  #                x = Hg,
+  #                group = Method,
+  #                color = Method)) +
+  scale_y_continuous(expand = c(.01,.01)) +
+  scale_x_continuous(expand = c(.01,.01)) +
+  xlab("Hair Mercury (parts per million)") +
+  ylab("CATE")
 
 ```
+
+```{r dr-learner-dose-response-mBP}
+
+ss10 <- smooth.spline(covariates_matrix$mBP_sg, 
+                      covariates_matrix$aipw_score, 
+                      df = 3,
+                      cv = F
+                      )
+ss11 <- smooth.spline(covariates_matrix$mBP_sg, 
+                      covariates_matrix$forest_score, 
+                      df = 3,
+                      cv = F
+                      )
+
+row1 <- data.frame(
+  mBP = as.matrix(ss10$x), 
+  CATE = as.matrix(ss10$y), 
+  Method = as.matrix(rep("DR Learner", length(ss10$x)))
+  )
+row2 <- data.frame(
+  mBP = as.matrix(ss10$x), 
+  CATE = as.matrix(ss11$y), 
+  Method = as.matrix(rep("Causal Forest", length(ss10$x)))
+  )
+
+plot_dat <- rbind(
+  rbind(row1,row2)
+  )
+
+plot_dat$mBP <- plot_dat$mBP*(max(afc_clean$mBP_sg) - min(afc_clean$mBP_sg)) + min(afc_clean$mBP_sg)
+
+f3 <- ggplot() +
+  geom_rug(data = afc_clean, 
+           aes(x = mBP_sg),
+           length = unit(2, "mm")) +
+  geom_line(data = plot_dat,
+            aes(y = CATE,
+                x = mBP,
+                group = Method,
+                color = Method)) +
+  scale_y_continuous(expand = c(.01,.01)) +
+  scale_x_continuous(expand = c(.01,.01)) +
+  xlab("Urinary MBP (ug/L)") +
+  ylab("CATE")
+
+```
+
+```{r dr-learner-dose-response-mibp}
+
+ss10 <- smooth.spline(covariates_matrix$miBP_sg, 
+                      covariates_matrix$aipw_score, 
+                      df = 3,
+                      cv = F
+                      )
+ss11 <- smooth.spline(covariates_matrix$miBP_sg, 
+                      covariates_matrix$forest_score, 
+                      df = 3,
+                      cv = F
+                      )
+
+row1 <- data.frame(
+  miBP = as.matrix(ss10$x), 
+  CATE = as.matrix(ss10$y), 
+  Method = as.matrix(rep("DR Learner", length(ss10$x)))
+  )
+row2 <- data.frame(
+  miBP = as.matrix(ss10$x), 
+  CATE = as.matrix(ss11$y), 
+  Method = as.matrix(rep("Causal Forest", length(ss10$x)))
+  )
+
+plot_dat <- rbind(
+  rbind(row1,row2)
+  )
+
+plot_dat$miBP <- plot_dat$miBP*(max(afc_clean$miBP_sg) - min(afc_clean$miBP_sg)) + min(afc_clean$miBP_sg)
+
+f4 <- ggplot() +
+  geom_rug(data = afc_clean, 
+           aes(x = miBP_sg),
+           length = unit(2, "mm")) +
+  geom_line(data = plot_dat,
+            aes(y = CATE,
+                x = miBP,
+                group = Method,
+                color = Method)) +
+  scale_y_continuous(expand = c(.01,.01)) +
+  scale_x_continuous(expand = c(.01,.01)) +
+  xlab("Urinary MiBP (ug/L)") +
+  ylab("CATE")
+
+```
+
+```{r dr-learner-dose-response-bpa}
+
+ss10 <- smooth.spline(covariates_matrix$BPA_sg, 
+                      covariates_matrix$aipw_score, 
+                      df = 3,
+                      cv = F
+                      )
+ss11 <- smooth.spline(covariates_matrix$BPA_sg, 
+                      covariates_matrix$forest_score, 
+                      df = 3,
+                      cv = F
+                      )
+
+row1 <- data.frame(
+  BPA = as.matrix(ss10$x), 
+  CATE = as.matrix(ss10$y), 
+  Method = as.matrix(rep("DR Learner", length(ss10$x)))
+  )
+row2 <- data.frame(
+  BPA = as.matrix(ss10$x), 
+  CATE = as.matrix(ss11$y), 
+  Method = as.matrix(rep("Causal Forest", length(ss10$x)))
+  )
+
+plot_dat <- rbind(
+  rbind(row1,row2)
+  )
+
+plot_dat$BPA <- plot_dat$BPA*(max(afc_clean$BPA_sg) - min(afc_clean$BPA_sg)) + min(afc_clean$BPA_sg)
+
+f2 <- ggplot() +
+  geom_rug(data = afc_clean, 
+           aes(x = BPA_sg),
+           length = unit(2, "mm")) +
+  geom_line(data = plot_dat,
+            aes(y = CATE,
+                x = BPA,
+                group = Method,
+                color = Method)) +
+  scale_y_continuous(expand = c(.01,.01)) +
+  scale_x_continuous(expand = c(.01,.01)) +
+  xlab("Urinary BPA (ug/L)") +
+  ylab("CATE")
+
+```
+
+
+
+```{r}
+
+grid.arrange(f1,f2,f3,f4, ncol=2)
+
+pdf(here("figures","modFigure.pdf"), width = 12, height = 12)
+grid.arrange(f1,f2,f3,f4, ncol=2)
+dev.off()
+
+```
+
