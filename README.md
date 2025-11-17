@@ -11,31 +11,29 @@ Note, however, that we use these learners to estimate associations.
 
 ## Analysis Pipeline
 
-The analysis consists of five sequential scripts that should be run in order:
+The analysis consists of four sequential scripts that should be run in order:
 
 1. **`1. AFC_data_man.R`** - Data management and preprocessing
    - Loads and cleans raw EARTH study data
    - Handles missing data
    - Creates analysis-ready datasets
 
-2. **`2. AFC_chem_analysis.R`** - Chemical modifier exploration
+2. **`2. AFC_chem_analysis.R`** - Chemical modifier exploration and outlier detection
    - Examines distributions of environmental modifiers
    - Compares trimmed vs. untrimmed modifier data
    - Generates descriptive statistics
+   - Performs multivariate outlier detection (Mahalanobis, PCA, LOF, Cook's D)
 
 3. **`3. AFC_IF_scores_gen.R`** - Influence function score generation
    - Implements causal forest models using GRF
    - Implements the DR learner models using cross validated SuperLearner
    - Generates influence function (IF) scores for statistical inference for both
 
-4. **`4. AFC_IF_scores_analysis.R`** - Heterogeneity analysis
+4. **`4. AFC_IF_scores_analysis.R`** - Heterogeneity analysis and visualization
    - Analyzes estimated treatment effect heterogeneity
    - Conducts subgroup analyses
    - Performs hypothesis tests for effect modification
-
-5. **`5. AFC_CATE_plots.R`** - Visualization
-   - Creates plots of modified associations
-   - Generates figures for manuscript
+   - Creates plots of modified associations and generates manuscript figures
 
 ## Requirements
 
@@ -99,15 +97,29 @@ EARTH_Analysis/
 3. Open the R project: `EARTH_Analysis.Rproj`
 
 ### Running the Analysis
-Execute scripts sequentially:
 
+**Option 1: Using Make (Recommended)**
+```bash
+# Run entire pipeline with one command
+make all
+
+# Or run individual steps
+make step1  # Data management
+make step2  # Chemical analysis
+make step3  # IF score generation
+make step4  # Heterogeneity analysis
+
+# See all available commands
+make help
+```
+
+**Option 2: Run scripts manually in R**
 ```r
 # Run from R console with project open
 source(here::here("code", "1. AFC_data_man.R"))
 source(here::here("code", "2. AFC_chem_analysis.R"))
 source(here::here("code", "3. AFC_IF_scores_gen.R"))
 source(here::here("code", "4. AFC_IF_scores_analysis.R"))
-source(here::here("code", "5. AFC_CATE_plots.R"))
 ```
 
 ### Output
