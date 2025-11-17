@@ -1,4 +1,36 @@
+# R Project Files
 .Rproj.user/
-manuscript/
-data/
+.RData
+.Rdata
+.Rhistory
 
+# R Markdown Outputs
+*.html
+*_files/
+*_cache/
+
+# Generated Figures and Outputs
+figures/
+*.pdf
+
+# Large Intermediate Files
+*.RDS
+
+# Scratch/Working Directories
+sandbox/
+misc/
+
+# Data and Manuscripts
+data/
+manuscript/
+
+# Document Files
+*.docx
+
+# MacOS System Files
+.DS_Store
+Icon?
+
+# Temporary Files
+*~
+*.tmp
