@@ -1,0 +1,249 @@
+---
+title: "EARTH Study: Heterogeneity Analysis Report"
+subtitle: "Environmental Modifiers of the Age-AFC Association"
+author: "EARTH Study Team"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+    code_folding: show
+    theme: flatly
+    highlight: tango
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = TRUE,
+  message = TRUE,
+  fig.width = 10,
+  fig.height = 6,
+  fig.path = "../figures/report_",
+  cache = FALSE
+)
+
+# Set working directory to project root
+knitr::opts_knit$set(root.dir = here::here())
+```
+
+# Introduction
+
+This report presents the complete analysis pipeline for examining whether and how environmental endocrine disrupting chemicals modify the association between age and antral follicle count (AFC) in women from the EARTH Study.
+
+**Study Population:** 775 women aged 21-46 years
+
+**Methods:**
+- Causal Forest (generalized random forests)
+- DR Learner (doubly robust learner with SuperLearner)
+
+**Analysis Date:** `r Sys.Date()`
+
+---
+
+# Step 1: Data Management and Preprocessing
+
+```{r step1-data-management, cache=FALSE}
+# Source the data management script
+source(here::here("code", "1. AFC_data_man.R"))
+```
+
+## Data Summary
+
+```{r step1-summary}
+# Display summary of cleaned datasets
+if (exists("afc_clean_trunc")) {
+  cat("\n### Truncated Dataset Summary ###\n")
+  print(skimr::skim(afc_clean_trunc))
+
+  cat("\n### Sample Size ###\n")
+  cat("Total observations:", nrow(afc_clean_trunc), "\n")
+}
+
+if (exists("afc_clean_notrunc")) {
+  cat("\n### Non-truncated Dataset Summary ###\n")
+  cat("Total observations:", nrow(afc_clean_notrunc), "\n")
+}
+```
+
+## Missing Data Summary
+
+```{r step1-missing}
+# If missing data summaries were generated
+if (exists("afc_clean_trunc")) {
+  missing_summary <- afc_clean_trunc %>%
+    summarise(across(everything(), ~sum(is.na(.)))) %>%
+    pivot_longer(everything(), names_to = "variable", values_to = "n_missing") %>%
+    filter(n_missing > 0) %>%
+    arrange(desc(n_missing))
+
+  if (nrow(missing_summary) > 0) {
+    print(missing_summary)
+  } else {
+    cat("No missing data in final dataset.\n")
+  }
+}
+```
+
+---
+
+# Step 2: Chemical Modifier Exploration
+
+```{r step2-chemical-analysis, cache=FALSE}
+# Source the chemical analysis script
+source(here::here("code", "2. AFC_chem_analysis.R"))
+```
+
+## Distribution of Environmental Modifiers
+
+```{r step2-distributions, fig.height=8}
+# Display any distribution plots created
+# Note: Adjust based on actual objects created in script 2
+```
+
+## Descriptive Statistics
+
+```{r step2-descriptives}
+# Display descriptive statistics for chemical exposures
+# This will capture any summary tables generated
+```
+
+## Comparison: Trimmed vs. Untrimmed Data
+
+```{r step2-comparison}
+# Display comparison results if available
+```
+
+---
+
+# Step 3: Influence Function Score Generation
+
+```{r step3-if-scores, cache=FALSE}
+# Source the IF score generation script
+# Note: This may take significant time to run
+cat("Generating influence function scores...\n")
+cat("This step may take several minutes.\n\n")
+
+source(here::here("code", "3. AFC_IF_scores_gen.R"))
+
+cat("\nIF score generation complete.\n")
+```
+
+## Causal Forest Model
+
+```{r step3-causal-forest}
+# Display causal forest diagnostics
+if (exists("cf_fit")) {
+  cat("### Causal Forest Summary ###\n")
+  print(cf_fit)
+
+  # Variable importance if available
+  if (exists("cf_varimp")) {
+    cat("\n### Variable Importance ###\n")
+    print(cf_varimp)
+  }
+}
+```
+
+## DR Learner Model
+
+```{r step3-dr-learner}
+# Display DR learner diagnostics
+if (exists("dr_fit")) {
+  cat("### DR Learner Summary ###\n")
+  print(dr_fit)
+
+  # Display propensity score diagnostics
+  if (exists("ps_diagnostics")) {
+    cat("\n### Propensity Score Diagnostics ###\n")
+    print(ps_diagnostics)
+  }
+}
+```
+
+## SuperLearner Performance
+
+```{r step3-superlearner}
+# Display SuperLearner ensemble weights and CV performance
+if (exists("sl_fit")) {
+  cat("### SuperLearner Ensemble Weights ###\n")
+  print(sl_fit)
+}
+```
+
+---
+
+# Step 4: Heterogeneity Analysis and Visualization
+
+```{r step4-heterogeneity, cache=FALSE, fig.height=8, fig.width=10}
+# Source the heterogeneity analysis script
+source(here::here("code", "4. AFC_IF_scores_analysis.R"))
+```
+
+## Overall Heterogeneity Tests
+
+```{r step4-tests}
+# Display hypothesis test results for effect modification
+```
+
+## Subgroup Analysis Results
+
+```{r step4-subgroups}
+# Display subgroup analysis tables
+```
+
+## Model Comparison
+
+```{r step4-comparison}
+# Compare Causal Forest vs DR Learner results
+```
+
+## Key Figures
+
+```{r step4-display-figures, fig.height=8, fig.width=10}
+# Display main figures generated from script 4
+# Note: These will be displayed based on objects created in the analysis
+```
+
+---
+
+# Summary and Conclusions
+
+## Key Findings
+
+- [Summary points will be populated based on results]
+
+## Model Performance Comparison
+
+```{r summary-comparison}
+# Create summary table comparing model performance
+```
+
+---
+
+# Session Information
+
+```{r session-info}
+sessionInfo()
+```
+
+---
+
+# Reproducibility Notes
+
+**Random Seeds:** Seeds are set in individual analysis scripts for reproducibility.
+
+**Computation Time:**
+
+```{r computation-time}
+cat("Report generated:", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), "\n")
+```
+
+**File Locations:**
+
+- Data: `data/` directory
+- Figures: `figures/` directory
+- Intermediate objects: `misc/` directory
