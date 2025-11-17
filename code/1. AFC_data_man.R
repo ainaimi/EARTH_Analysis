@@ -54,11 +54,11 @@ afc_clean %>%
 # the relevant data:
 the_data <- c("AFC_t", "year", "DOR",
               "age", "bmi", "white", "educ1", "eversmok", "previousIVF", "previousIUI", "gravid",
-              "mEP1_sg", "mBZP1_sg", "mCNP_sg","miBP_sg",
+              "mEP1_sg", "mBZP1_sg", "mCNP_sg",#"miBP_sg",
               "mBP_sg","BP_3_sg", "M_PB_sg", "dehp_sg", 
               "BPA_sg", "mCOP_sg", "mCPP_sg", "B_PB_sg", "P_PB_sg", "Hg")
 
-env_vars <- c("mEP1_sg", "mBZP1_sg", "mCNP_sg","miBP_sg",
+env_vars <- c("mEP1_sg", "mBZP1_sg", "mCNP_sg",#"miBP_sg",
               "mBP_sg","BP_3_sg", "M_PB_sg", "dehp_sg", 
               "BPA_sg", "mCOP_sg", "mCPP_sg", "B_PB_sg", "P_PB_sg", "Hg")
 
@@ -71,7 +71,7 @@ afc <- afc_clean %>% rename(PPB     = P_PB,
                             AFCt    = AFC_t,
                             mEP1sg  = mEP1_sg, 
                             mBZP1sg = mBZP1_sg,
-                            miBPsg  = miBP_sg,
+                            #miBPsg  = miBP_sg,
                             BP3sg   = BP_3_sg, 
                             MPBsg   = M_PB_sg, 
                             dehpsg  = dehp_sg,
@@ -81,7 +81,7 @@ afc <- afc_clean %>% rename(PPB     = P_PB,
                             BPBsg   = B_PB_sg)
 
 afc %>% summarise(across(c(AFCt, year, PPB, PPBsg, mCNP, mCNPsg, mBP, mBPsg, Hg,
-                           PPB, PPBsg, mCNPsg, mBPsg, AFCt, mEP1sg, mBZP1sg, miBPsg,
+                           PPB, PPBsg, mCNPsg, mBPsg, AFCt, mEP1sg, mBZP1sg, #miBPsg,
                            BP3sg, MPBsg, dehpsg, BPAsg, mCOPsg, mCPPsg, BPBsg), .fns = 
                            list(min = min,
                                 median = median,
@@ -105,14 +105,8 @@ afc_clean_trunc[,env_vars] <- apply(afc_clean_trunc[,env_vars], 2, trunc_func)
 skim(afc_clean)
 skim(afc_clean_trunc)
 
-
-
 save(afc_clean_trunc, 
      file = here("data", "afc_clean_trunc.Rdata"))
 
 save(afc_clean_notrunc, 
      file = here("data", "afc_clean_notrunc.Rdata"))
-
-
-##### STOP
-

@@ -73,13 +73,13 @@ categorical_vars <- categorical_vars %>%
 
 skim(categorical_vars)
 
-env_vars <- c("mEP1_sg", "mBZP1_sg", "mCNP_sg","miBP_sg",
+env_vars <- c("mEP1_sg", "mBZP1_sg", "mCNP_sg",#"miBP_sg",
               "mBP_sg","BP_3_sg", "M_PB_sg", "dehp_sg", 
               "BPA_sg", "mCOP_sg", "mCPP_sg", "B_PB_sg", "P_PB_sg", "Hg")
 
 # identify and transform continuous
 continuous_vars <- afc_clean_notrunc[,c("bmi", "year",
-                                      "mEP1_sg", "mBZP1_sg", "mCNP_sg","miBP_sg",
+                                      "mEP1_sg", "mBZP1_sg", "mCNP_sg",#"miBP_sg",
                                       "mBP_sg","BP_3_sg", "M_PB_sg", "dehp_sg", 
                                       "BPA_sg", "mCOP_sg", "mCPP_sg", "B_PB_sg", "P_PB_sg", "Hg")]
 
@@ -251,7 +251,7 @@ pred_wrapper <- function(sl, newdata) {
 }
 
 fit_mu_2 <- SuperLearner(Y = outcome,
-                         X = covariates_matrix_w,
+                         X = covariates_matrix,
                          method = "method.NNLS", 
                          family = gaussian(),
                          SL.library = list("SL.mean", "SL.glm", 
@@ -263,12 +263,12 @@ fit_mu_2 <- SuperLearner(Y = outcome,
                          control = list(saveCVFitLibrary = T),
                          verbose = T)
 
-length(pred_wrapper(fit_mu_2, newdata = covariates_matrix_w))
+length(pred_wrapper(fit_mu_2, newdata = covariates_matrix))
 
 VarImpSL <- vi_permute(object = fit_mu_2, 
                        #method = "permute", 
-                       feature_names = names(covariates_matrix_w), 
-                       train = covariates_matrix_w, 
+                       feature_names = names(covariates_matrix), 
+                       train = covariates_matrix, 
                        target = as.numeric(outcome),
                        metric = "RMSE",
                        smaller_is_better = T,
@@ -366,8 +366,6 @@ aipw_score <- aipw_func(exposure,
             mu_hat0, 
             mu_hat1)
 
-
-as.numeric(aipw_score)
 
 names(aipw_score) <- NULL
 
