@@ -41,14 +41,18 @@ ggplot(afc_clean_notrunc) +
   geom_point(aes(x = age, y = AFC_t)) +
   geom_smooth(aes(x = age, y = AFC_t))
 
+ggsave(filename = here("figures", "main_scatterplot.png"), dpi = 300)
 
-afc_clean_notrunc %>% 
+
+descriptives_table1 <- afc_clean_notrunc %>% 
   group_by(as.numeric(age>=35)) %>% 
   summarize(mean_bmi = mean(bmi),
             mean_gravid = mean(gravid),
             mean_IUI = mean(previousIUI),
             mean_IVF = mean(previousIVF),
             mean_AFC = mean(AFC_t))
+
+saveRDS(descriptives_table1, here("output", "descriptives_table1.rds"))
 
 # create exposure variable
 exposure <- as.numeric(unlist(afc_clean_notrunc[,"age_bin"]))
@@ -73,13 +77,13 @@ categorical_vars <- categorical_vars %>%
 
 skim(categorical_vars)
 
-env_vars <- c("mEP1_sg", "mBZP1_sg", "mCNP_sg",#"miBP_sg",
+env_vars <- c("mEP1_sg", "mBZP1_sg", "mCNP_sg","miBP_sg",
               "mBP_sg","BP_3_sg", "M_PB_sg", "dehp_sg", 
               "BPA_sg", "mCOP_sg", "mCPP_sg", "B_PB_sg", "P_PB_sg", "Hg")
 
 # identify and transform continuous
 continuous_vars <- afc_clean_notrunc[,c("bmi", "year",
-                                      "mEP1_sg", "mBZP1_sg", "mCNP_sg",#"miBP_sg",
+                                      "mEP1_sg", "mBZP1_sg", "mCNP_sg","miBP_sg",
                                       "mBP_sg","BP_3_sg", "M_PB_sg", "dehp_sg", 
                                       "BPA_sg", "mCOP_sg", "mCPP_sg", "B_PB_sg", "P_PB_sg", "Hg")]
 
@@ -148,7 +152,7 @@ rf_ps_overlap_plot <- ggplot(plot_dat_ps) +
                    fill = Exposure), alpha = .5) +
   scale_x_continuous(expand = c(0,0), limits = c(0,1)) +
   scale_y_continuous(expand = c(0,0)) +
-  ggtitle("Propensity Score Overlap: Causal Forest")
+  ggtitle("Causal Forest")
 
 rf_ps_overlap_plot
 
@@ -238,12 +242,16 @@ if(file.exists(here("misc","fit_pi.RDS"))){
                             control = list(saveCVFitLibrary = F),
                             parallel = "multicore",
                             verbose = T)
-  saveRDS(object = fit_mu, file = here("misc","fit_pi.RDS"))
+  saveRDS(object = fit_pi, file = here("misc","fit_pi.RDS"))
 }
 
 summary(fit_mu)
 
+saveRDS(summary(fit_mu), here("output", "mu_sl_summary.rds"))
+
 summary(fit_pi)
+
+saveRDS(summary(fit_pi), here("output", "pi_sl_summary.rds"))
 
 ## generate variable importance
 pred_wrapper <- function(sl, newdata) {
@@ -302,6 +310,8 @@ ggplot(VarImp) +
                                    hjust=.5)) +
   scale_y_continuous(expand = c(0,0))
 
+ggsave(filename = here("figures", "variable_importance_plot.png"), units = "cm", height = 16, width = 16, dpi = 300)
+
 ## create separate variable list for cf versus drl
 
 var_names_rf <- unique(VarImpRf[order(-VarImpRf$Importance),]$Variable)
@@ -320,12 +330,15 @@ sl_ps_overlap_plot <- ggplot(plot_dat_ps) +
                    fill = Exposure), alpha = .5) +
   scale_x_continuous(expand = c(0,0), limits = c(0,1)) +
   scale_y_continuous(expand = c(0,0)) +
-  ggtitle("Propensity Score Overlap: Super Learner")
+  ggtitle("Super Learner")
 
 sl_ps_overlap_plot
 
-grid.arrange(rf_ps_overlap_plot,
-             sl_ps_overlap_plot)
+ps_overlap <- grid.arrange(rf_ps_overlap_plot,
+                           sl_ps_overlap_plot)
+
+ggsave(plot = ps_overlap, filename = here("figures", "ps_overlap_plot.png"),
+       units = "cm", height = 16, width = 10, dpi = 300)
 
 # Again, with these diagnostics complete, we can construct and ATE estimate using the double robust AIPW estimator, with the exposure and outcome models obtained via stacking:
 
@@ -334,6 +347,8 @@ grid.arrange(rf_ps_overlap_plot,
 pscore <- as.matrix(fit_pi$SL.predict)
 
 mu_hat <- as.matrix(fit_mu$SL.predict)
+
+names(covariates_matrix_w)
 
 mu_hat1 <- NULL
 for(i in 1:num.folds){
@@ -389,6 +404,8 @@ res_ate <-  rbind(cf_ate,
 row.names(res_ate) <- c("Causal Forest", "AIPW with Stacking")
 
 res_ate
+
+saveRDS(res_ate, here("output", "ate_results.rds"))
 
 afc_clean_notrunc <- afc_clean_notrunc %>% 
   mutate(forest_scores = get_scores(forest),

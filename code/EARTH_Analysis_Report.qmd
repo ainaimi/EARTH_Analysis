@@ -1,0 +1,197 @@
+---
+title: "Supporting Material: Environmental Chemicals as Modifiers of the Association between Age and Antral Follicle Count"
+author: 
+    - name: "Ashley I Naimi"
+      affiliation: "Emory University"
+date: today
+execute-dir: project
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    number-sections: true
+    code-fold: show
+    code-tools: true
+    theme: flatly
+    highlight-style: tango
+    df-print: kable
+    embed-resources: true
+execute:
+  echo: true
+  warning: true
+  message: true
+  error: true
+  fig-width: 10
+  fig-height: 6
+  cache: false
+---
+
+```{r setup, include=FALSE}
+# Set working directory to project root
+knitr::opts_knit$set(root.dir = here::here())
+options(knitr.kable.NA = '', digits = 2)
+# Load required packages
+library(here)
+library(tidyverse)
+```
+
+# Introduction
+
+This report presents the complete analysis pipeline for examining whether and how environmental endocrine disrupting chemicals modify the association between age and antral follicle count (AFC) in women from the EARTH Study.
+
+**Study Population:** 775 women aged 21-46 years
+
+**Methods:**
+- Causal Forest (generalized random forests)
+- DR Learner (doubly robust learner with SuperLearner)
+
+---
+
+# Step 1: Data Management and Preprocessing
+
+This section presents summary statistics from the initial data management and preprocessing stage. We examine the distribution of antral follicle count (AFC) by diminished ovarian reserve (DOR) status, overall data quality metrics, and key summary statistics for our analysis variables.
+
+## AFC Summary by DOR Status
+
+```{r afc-summary}
+afc_summary <- readRDS(here("output", "afc_summary_by_DOR.rds"))
+knitr::kable(afc_summary, caption = "Summary of AFC by DOR Status")
+```
+
+This table summarizes the antral follicle count stratified by diminished ovarian reserve status. What's initially unclear here is the distinction between DOR and AFC? Why do women with no DOR have AFCs as low as 2?
+
+## Data Quality Assessment
+
+```{r skim-results}
+skim_results <- readRDS(here("output", "skim_results.rds"))
+skim_results[,-1]
+```
+
+The skimmed dataset provides a comprehensive overview of data completeness, distributions, and potential quality issues. 
+
+# Step 2: Chem Analysis
+
+This section examines the distribution and characteristics of environmental chemical exposures measured in the EARTH Study cohort. We visualize the exposure distributions, assess the impact of truncating extreme values, and conduct comprehensive outlier analysis to identify observations with unusual chemical exposure patterns.
+
+## Environmental Variables Distribution (Non-Truncated)
+
+![Distribution of environmental chemical exposures without truncation](../figures/env_vars_notrunc.png)
+
+This figure displays the raw distributions of all measured environmental chemical exposures without any truncation of extreme values. 
+
+## Environmental Variables Distribution (Truncated)
+
+![Distribution of environmental chemical exposures with truncation](../figures/env_vars_trunc.png)
+
+This figure shows the distributions of chemical exposures **after** truncating extreme values to reduce the influence of outliers. 
+
+## Outlier Analysis
+
+This subsection presents a detailed examination of multivariate outliers across the chemical exposure space to identify individuals with unusual exposure profiles.
+
+### Outlier Detection Grid
+
+![Grid of outlier detection metrics across chemical exposures](../figures/outlier_grid.png)
+
+This grid visualization displays multiple outlier detection metrics applied to each chemical exposure variable individually. We looked at Mahalanobis distances, principal components using single value decompositions, the local outlier factor, and Cook's D.
+
+### Outlier Heatmap
+
+![Heatmap of multivariate outlier patterns](../figures/outlier_heatmap.png)
+
+The heatmap provides a multivariate perspective on outlier patterns, showing which individuals have unusual combinations of chemical exposures based on all of the outlier detection methods used. For example, ID 70 was deemed an outlier according to all methods, but the majority of outliers were deemed as such only by two or three methods.
+
+### Identified Outliers
+
+```{r outlier-ids}
+outliers_id <- readRDS(here("output", "outliers_id.rds"))
+knitr::kable(outliers_id, caption = "Summary of Identified Outlier Observations")
+```
+
+This table summarizes the observations identified as outliers through the various detection methods.
+
+# Step 3: Influence Function Score Generation
+
+This section presents results from fitting the algorithms needed for the doubly robust learner. These algorithms include fits for the outcome regression (mu) and propensity score (pi) models using SuperLearner. The influence function scores are then used to construct AIPW scores, which can be averaged to compute the conditional associations and marginal associations defined in the main paper.
+
+## Main Scatterplot: AFC vs Age
+
+![Scatterplot of AFC against age](../figures/main_scatterplot.png)
+
+This scatterplot visualizes the relationship between age (treatment variable) and antral follicle count (outcome) in the study population. The plot provides a visual assessment of the strength and form of the age-AFC association before adjustment for confounders.
+
+## Descriptive Statistics (Table 1)
+
+```{r descriptives-table1}
+descriptives_table1 <- readRDS(here("output", "descriptives_table1.rds"))
+knitr::kable(descriptives_table1, caption = "Descriptive Statistics of Analysis Sample")
+```
+
+This table presents baseline characteristics of the analysis sample, typically stratified by age groups or other relevant factors. 
+
+## SuperLearner Outcome Model (Mu) Summary
+
+```{r mu-sl-summary}
+mu_sl_summary <- readRDS(here("output", "mu_sl_summary.rds"))
+print(mu_sl_summary$Table)
+```
+
+This output summarizes the performance of the SuperLearner ensemble used to estimate the outcome regression function (conditional mean of AFC given covariates). The summary includes algorithm weights and cross-validated performance metrics (cross-validated mean squared error), demonstrating how well the ensemble predicts AFC. 
+
+## SuperLearner Propensity Score (Pi) Summary
+
+```{r pi-sl-summary}
+pi_sl_summary <- readRDS(here("output", "pi_sl_summary.rds"))
+print(pi_sl_summary$Table)
+```
+
+This output summarizes the SuperLearner ensemble used to estimate the generalized propensity score (conditional density of age given covariates). The summary shows which algorithms contribute most to predicting age and the overall cross-validated performance (cross-validated mean squared error).
+
+## Variable Importance Plot
+
+![Variable importance from SuperLearner models](../figures/variable_importance_plot.png)
+
+This figure displays the relative importance of covariates in predicting antral follicle count, derived from the SuperLearner ensembles. Variable importance measure used specifically is the permutation method.
+
+## Propensity Score Overlap
+
+![Assessment of propensity score overlap across age distribution](../figures/ps_overlap_plot.png)
+
+This plot propensity score overlap from both the causal forest and super learner approaches.
+
+## Average Treatment Effect (ATE) Results
+
+```{r ate-results}
+res_ate <- readRDS(here("output", "ate_results.rds"))
+knitr::kable(res_ate, caption = "Average Treatment Effect Estimates")
+```
+
+This table presents the estimated marginally adjusted association between age and AFC. This association quantifies the average AFC among women ≥ 35 years, versus women < 35 years, standardized to the distribution of confounders and covariates included in the outcome model. This overall association serves as a baseline for comparison when examining how the association varies across levels of chemical exposures in the heterogeneity analysis.
+
+# Step 4: CATE Functions
+
+This section presents the main heterogeneity analysis results, examining whether and how environmental chemical exposures modify the age-AFC relationship. We use best linear projection to test for heterogeneity and visualize conditional average treatment effect (CATE) functions that show how the age effect varies across chemical exposure levels.
+
+## Linear Projection Results (Table 2)
+
+```{r linear-projection}
+table2 <- readRDS(here("output", "linear_projection_output.rds"))
+knitr::kable(table2, caption = "Best Linear Projection: Tests for Treatment Effect Heterogeneity")
+```
+
+This table presents the heterogeneity analysis by projecting the estimated CATEs onto each environmental chemical exposure. Large and precise coefficients indicate that the age-AFC association varies as a function of the chemical exposure level. The best linear projection approach provides valid inference even when the CATE function is not truly linear, making it a robust tool for detecting effect modification, provided that one understands one is interpreting a projection model, and not a true model.
+
+## Heterogeneity Test Statistics
+
+![Scatterplot of heterogeneity test statistics across chemical exposures](../figures/teststat_scatter.png)
+
+This scatterplot of absolute test statistic values visualizes how much the association changes as a function of the environmental exposure, accounting for variability in the projection estimates.  heterogeneity across all chemical exposures examined in the analysis. The plot allows quick identification of which chemicals show the strongest evidence for effect modification. 
+
+## CATE Functions by Chemical Exposure
+
+![Conditional average treatment effect functions across chemical exposure gradients](../figures/cate_functions_full.png)
+
+This multi-panel figure displays the estimated association functions, showing how the age-AFC association changes across the distribution of each chemical exposure. 
+
+

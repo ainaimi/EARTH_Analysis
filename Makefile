@@ -4,7 +4,7 @@
 
 # Variables
 R := Rscript
-RMARKDOWN := Rscript -e "rmarkdown::render('code/EARTH_Analysis_Report.Rmd', output_dir='.')"
+QUARTO := quarto render code/EARTH_Analysis_Report.qmd --output-dir .
 
 # Directories
 CODE_DIR := code
@@ -65,11 +65,11 @@ $(ANALYSIS_OUTPUTS): $(CODE_DIR)/4.\ AFC_IF_scores_analysis.R $(IF_OUTPUTS)
 	@touch $(ANALYSIS_OUTPUTS)
 
 # Generate final report
-$(REPORT): $(CODE_DIR)/EARTH_Analysis_Report.Rmd $(ANALYSIS_OUTPUTS)
+$(REPORT): $(CODE_DIR)/EARTH_Analysis_Report.qmd $(ANALYSIS_OUTPUTS)
 	@echo "======================================"
 	@echo "Generating Final Report"
 	@echo "======================================"
-	$(RMARKDOWN)
+	$(QUARTO)
 	@echo "Report generated: $(REPORT)"
 
 # Individual step targets (can run steps independently)
@@ -92,6 +92,7 @@ clean-report:
 	@echo "Removing report..."
 	rm -f $(REPORT)
 	rm -f $(CODE_DIR)/EARTH_Analysis_Report.html
+	rm -rf $(CODE_DIR)/EARTH_Analysis_Report_files
 
 clean:
 	@echo "Removing intermediate marker files..."

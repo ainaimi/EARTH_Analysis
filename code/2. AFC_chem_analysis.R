@@ -35,7 +35,7 @@ head(afc_clean_trunc)
 ## some basic outlier / leverage analyses
 ## do the people with extreme chem values also have large outcome values?
 ## 
-env_vars <- c("mEP1_sg", "mBZP1_sg", "mCNP_sg",#"miBP_sg",
+env_vars <- c("mEP1_sg", "mBZP1_sg", "mCNP_sg","miBP_sg",
               "mBP_sg","BP_3_sg", "M_PB_sg", "dehp_sg", 
               "BPA_sg", "mCOP_sg", "mCPP_sg", "B_PB_sg", "P_PB_sg", "Hg")
 
@@ -93,13 +93,17 @@ p_notrunc <- plot_distributions(
 )
 print(p_notrunc)
 
-p_notrunc <- plot_distributions(
+ggsave(here("figures", "env_vars_notrunc.png"), units = "cm", width = 16, height = 16, dpi = 300)
+
+p_trunc <- plot_distributions(
   data = afc_clean_trunc,
   variables = plot_vars,
   ncol = 4,
   title = "Distribution of AFC, age, and Environmental Chemicals (Truncated)"
 )
-print(p_notrunc)
+print(p_trunc)
+
+ggsave(here("figures", "env_vars_trunc.png"), units = "cm", width = 16, height = 16, dpi = 300)
 
 ## multivariate outlier detection
 # Prepare multivariate data (outcome + all environmental variables)
@@ -165,8 +169,8 @@ pca_result <- prcomp(multivar_data[, c("AFC_t", "age", env_vars)],
                      scale. = TRUE,
                      center = TRUE)
 
-cat("Variance explained by first 3 PCs:",
-    round(sum(summary(pca_result)$importance[2, 1:3]) * 100, 1), "%\n")
+cat("Variance explained by first 5 PCs:",
+    round(sum(summary(pca_result)$importance[2, 1:5]) * 100, 1), "%\n")
 
 
 # Extract variance explained
@@ -205,19 +209,6 @@ ggplot(pca_df) +
   theme(legend.position = "top",
         plot.title = element_text(face = "bold"))
 
-# Plot 2: PCA biplot with outliers highlighted
-p2 <- ggplot(data.frame(PC1 = pca_result$x[,1],
-                        PC2 = pca_result$x[,2],
-                        outlier = multivar_data$pc_outlier)) +
-  geom_point(aes(x = PC1, y = PC2, color = outlier), alpha = 0.6) +
-  scale_color_manual(values = c("gray50", "red")) +
-  labs(title = "PCA: First Two Components",
-       x = paste0("PC1 (", round(summary(pca_result)$importance[2,1]*100, 1), "%)"),
-       y = paste0("PC2 (", round(summary(pca_result)$importance[2,2]*100, 1), "%)"),
-       color = "Outlier") +
-  theme_classic()
-plot(p2)
-
 # Get PC scores
 pc_scores <- as.data.frame(pca_result$x[, 1:5])
 
@@ -230,6 +221,19 @@ multivar_data$pc_outlier <- pc_dist > pc_threshold
 
 cat("PCA outliers (top 1%):", sum(multivar_data$pc_outlier), "\n")
 cat("PC distance threshold:", round(pc_threshold, 2), "\n\n")
+
+# Plot 2: PCA biplot with outliers highlighted
+p2 <- ggplot(data.frame(PC1 = pca_result$x[,1],
+                        PC2 = pca_result$x[,2],
+                        outlier = multivar_data$pc_outlier)) +
+  geom_point(aes(x = PC1, y = PC2, color = outlier), alpha = 0.6) +
+  scale_color_manual(values = c("gray50", "red")) +
+  labs(title = "PCA: First Two Components",
+       x = paste0("PC1 (", round(summary(pca_result)$importance[2,1]*100, 1), "%)"),
+       y = paste0("PC2 (", round(summary(pca_result)$importance[2,2]*100, 1), "%)"),
+       color = "Outlier") +
+  theme_classic()
+plot(p2)
 
 # ============================================================================
 # METHOD 3: Local Outlier Factor (LOF)
@@ -307,6 +311,21 @@ cat("High Cook's D (> 4/n):", sum(multivar_data$high_cooksd, na.rm = TRUE), "\n"
 cat("High leverage (> 2p/n):", sum(multivar_data$high_leverage, na.rm = TRUE), "\n")
 cat("High std residuals (|z| > 3):", sum(multivar_data$high_stdresid, na.rm = TRUE), "\n\n")
 
+p4 <- ggplot(multivar_data, aes(x = 1:nrow(multivar_data), y = .cooksd)) +
+  geom_point(aes(color = high_cooksd), alpha = 0.6) +
+  geom_hline(yintercept = cooksd_threshold,
+             linetype = "dashed",
+             color = "red") +
+  scale_color_manual(values = c("gray50", "red"),
+                     labels = c("Normal", "High Influence")) +
+  #scale_y_log10() +
+  labs(title = "Cook's Distance (Log Scale)",
+       x = "Observation",
+       y = "Cook's Distance",
+       color = "Influence") +
+  theme_classic()
+print(p4)
+
 # ============================================================================
 # SUMMARY: Flagged by Multiple Methods
 # ============================================================================
@@ -332,17 +351,11 @@ cat("Observations flagged by all 4 methods:", sum(multivar_data$n_flags == 4), "
 # VISUALIZATIONS
 # ============================================================================
 
-# Plot 4: Number of flags per observation
-p4 <- ggplot(multivar_data, aes(x = n_flags)) +
-  geom_bar(fill = "steelblue", alpha = 0.8) +
-  labs(title = "Distribution of Outlier Flags",
-       x = "Number of Methods Flagging Observation",
-       y = "Count") +
-  scale_x_continuous(breaks = 0:4) +
-  theme_classic()
-
 # Combine plots
-gridExtra::grid.arrange(p1, p2, p3, p4, ncol = 2)
+outlider_grid <- gridExtra::grid.arrange(p1, p2, p3, p4, ncol = 2)
+
+ggsave(plot = outlider_grid, 
+       here("figures", "outlier_grid.png"), units = "cm", width = 16, height = 16, dpi = 300)
 
 # Plot 5: Heatmap of flagged observations
 if (nrow(consensus_outliers) > 0) {
@@ -363,13 +376,15 @@ if (nrow(consensus_outliers) > 0) {
   print(p5)
 }
 
+ggsave(here("figures", "outlier_heatmap.png"), units = "cm", width = 16, height = 16, dpi = 300)
+
 # ============================================================================
 # SAVE RESULTS
 # ============================================================================
 
 # Save outlier analysis results
 outlier_results <- multivar_data %>%
-  select(row_id, AFC_t, mahala_dist, mahala_outlier,
+  select(row_id, AFC_t, age, mahala_dist, mahala_outlier,
          pc_dist, pc_outlier, lof_score, lof_outlier,
          .cooksd, high_cooksd, n_flags) %>%
   arrange(desc(n_flags), desc(mahala_dist))
@@ -381,10 +396,11 @@ cat("\n=== Results saved to misc/outlier_analysis_results.csv ===\n")
 
 # Display top consensus outliers
 cat("\nTop 10 observations flagged by multiple methods:\n")
-print(outlier_results %>%
+outliers_id <- outlier_results %>%
         filter(n_flags >= 2) %>%
         head(10) %>%
-        select(row_id, AFC_t, n_flags, mahala_outlier, pc_outlier, lof_outlier, high_cooksd))
+        select(row_id, AFC_t, age, n_flags, mahala_outlier, pc_outlier, lof_outlier, high_cooksd)
 
 
+saveRDS(outliers_id, here("output", "outliers_id.rds"))
 
