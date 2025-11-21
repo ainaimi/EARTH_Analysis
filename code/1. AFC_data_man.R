@@ -2,41 +2,13 @@ pacman::p_load(
   rio,
   here,
   skimr,
-  tidyverse,
-  parallel,
-  scales,
-  haven,
-  lmtest,
-  sandwich,
-  SuperLearner,
-  pROC,
-  broom,
-  xtable,
-  gridExtra,
-  vip,
-  ranger,
-  xgboost,
-  polspline,
-  earth
+  tidyverse
 )
-
-# set the theme for figures
-thm <- theme_classic() +
-  theme(
-    legend.position = "top",
-    legend.background = element_rect(fill = "transparent", colour = NA),
-    legend.key = element_rect(fill = "transparent", colour = NA),
-    text = element_text(size = 20)
-  )
-theme_set(thm)
 
 #Load afc data, double check variables + attributes
 load(here("data", "imputed_EARTH.Rdata")) 
-new_afc <- afc_clean <- imputed_data %>% 
-  rename(AFCt = AFC_t)
-
-## some data basics, names, dimensions, etc
-names(afc_clean) 
+afc_clean <- imputed_data %>%
+  rename(AFCt = AFC_t) 
 
 ## A question for Audrey: so what is DOR?
 afc_summary <- afc_clean %>% 
@@ -70,13 +42,11 @@ env_vars <- c("MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
               "BPA", "BP", "MP", "PP",
               "Hg")
 
-length(env_vars)
+skim_results <- skimr::skim(afc_clean[,the_data])
 
-skim_results <- skimr::skim(new_afc[,the_data])
+saveRDS(skim_results, here("output", "skim_results.rds"))
 
-saveRDS(skim_results, "skim_results.rds")
-
-summary_stats <- new_afc %>%
+summary_stats <- afc_clean %>%
   summarise(across(c(AFCt, year, month, age,
                      MBP, MiBP, MCNP, MCOP, MECPP, MEHHP, MEHP, MEOHP,
                      MCPP, MEP, MBzP, sumDEHP,
@@ -88,10 +58,10 @@ summary_stats <- new_afc %>%
                                 q25 = ~quantile(., 0.25),
                                 q75 = ~quantile(., 0.75),
                                 max = max))) %>% 
-  round(., digits = 2) %>% 
+  round(., digits = 2) %>%
   pivot_longer(everything(), names_sep="_", names_to=c('variable', '.value'))
 
-saveRDS(summary_stats, "summary_stats.rds")
+saveRDS(summary_stats, here("output", "summary_stats.rds"))
 
 # trim the data
 trunc_func <- function(x, upper_bound = .925){
@@ -102,9 +72,6 @@ trunc_func <- function(x, upper_bound = .925){
 afc_clean_notrunc <- afc_clean[,c(the_data, impute_flags)]
 afc_clean_trunc   <- afc_clean[,c(the_data, impute_flags)]
 afc_clean_trunc[,env_vars] <- apply(afc_clean_trunc[,env_vars], 2, trunc_func)
-
-skim(afc_clean)
-skim(afc_clean_trunc)
 
 save(afc_clean_trunc, 
      file = here("data", "afc_clean_trunc.Rdata"))

@@ -1,18 +1,10 @@
 pacman::p_load(
   rio,
   here,
-  skimr,
   tidyverse,
   parallel,
-  scales,
-  haven,
-  lmtest,
-  sandwich,
   SuperLearner,
-  pROC,
   broom,
-  xtable,
-  gridExtra,
   vip,
   ranger,
   xgboost,
@@ -20,21 +12,9 @@ pacman::p_load(
   earth
 )
 
-# set the theme for figures
-thm <- theme_classic() +
-  theme(
-    legend.position = "top",
-    legend.background = element_rect(fill = "transparent", colour = NA),
-    legend.key = element_rect(fill = "transparent", colour = NA),
-    text = element_text(size = 20)
-  )
-theme_set(thm)
-
-load(here("data", "afc_clean_notrunc.Rdata")) 
+load(here("data", "afc_clean_notrunc.Rdata"))
 
 afc_clean_notrunc$age_bin <- as.numeric(afc_clean_notrunc[,"age"] >= 35)
-
-names(afc_clean_notrunc)
 
 ggplot(afc_clean_notrunc) +
   geom_point(aes(x = age, y = AFCt)) +
@@ -61,35 +41,24 @@ mean(exposure)
 # create outcome variable
 outcome <- as.numeric(unlist(afc_clean_notrunc[,"AFCt"]))
 
-hist(outcome)
-table(outcome)
-
-length(exposure)
-length(outcome)
-
 # identify and transform categorical
-categorical_vars <- afc_clean_notrunc %>% select(where(is.factor), -DOR) 
-
-skim(categorical_vars)
+categorical_vars <- afc_clean_notrunc %>% select(where(is.factor), -DOR)
 
 # 17 EDC variables with <40% missing (16 SG-adjusted + 1 Hg)
+# (defined in file 1. AFC_data_man.R)
 env_vars <- c("MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
               "MCPP", "MEP", "MBzP", "sumDEHP",
               "BPA", "BP", "MP", "PP",
               "Hg")
 
 # identify and transform continuous
-continuous_vars <- afc_clean_notrunc %>% 
-  select(where(is.numeric), -starts_with("imp_"), -age_bin, -AFCt, -age, -DOR) 
-continuous_vars
+continuous_vars <- afc_clean_notrunc %>%
+  select(where(is.numeric), -starts_with("imp_"), -age_bin, -AFCt, -age, -DOR)
 
 # identify imputation flags
-flag_vars <- afc_clean_notrunc %>% select(starts_with("imp_")) 
-flag_vars
+flag_vars <- afc_clean_notrunc %>% select(starts_with("imp_"))
 
 new_afc <- data.frame(outcome, exposure, categorical_vars, continuous_vars, flag_vars)
-
-skim(new_afc)
 
 # relevant covariate set
 covariates <- c(names(continuous_vars), names(categorical_vars), names(flag_vars))
@@ -151,8 +120,6 @@ fold_index <- split(fold_dat$id,fold_dat$folds)
 # we'll use parallel processing to speed things up
 options(mc.cores = detectCores() - 2)
 
-getOption("mc.cores")
-
 # covariates_matrix_w_augment <- cbind(covariates_matrix_w, augment_data)
 
 if(file.exists(here("misc","fit_mu.RDS"))){
@@ -210,8 +177,6 @@ fit_mu_2 <- SuperLearner(Y = outcome,
                          cvControl = list(V = num.folds, validRows = fold_index),
                          control = list(saveCVFitLibrary = T),
                          verbose = T)
-
-length(pred_wrapper(fit_mu_2, newdata = covariates_matrix))
 
 VarImpSL <- vi_permute(object = fit_mu_2, 
                        #method = "permute", 
@@ -273,8 +238,6 @@ ggsave(plot = ps_overlap_plot, filename = here("figures", "ps_overlap_plot.png")
 pscore <- as.matrix(fit_pi$SL.predict)
 
 mu_hat <- as.matrix(fit_mu$SL.predict)
-
-names(covariates_matrix_w)
 
 mu_hat1 <- NULL
 for(i in 1:num.folds){

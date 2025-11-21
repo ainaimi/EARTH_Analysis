@@ -6,19 +6,6 @@ pacman::p_load(
   parallel,
   scales,
   haven,
-  lmtest,
-  sandwich,
-  SuperLearner,
-  pROC,
-  broom,
-  xtable,
-  gridExtra,
-  vip,
-  ranger,
-  xgboost,
-  polspline,
-  earth,
-  waldo,
   VIM,
   naniar,
   missForest,
@@ -37,12 +24,6 @@ thm <- theme_classic() +
 theme_set(thm)
 
 a <- read_sas(here("data", "afc_mixtures.sas7bdat"))
-
-dim(a)
-
-head(a)
-
-names(a)
 
 ## step 1: select relevant variables to construct SG versions of EDCs
 
@@ -89,10 +70,6 @@ a_ <- a %>% select(
   sartnew2,
   AFScanDate
 )
-
-names(a_)
-
-head(a_)
 
 skimr::skim(a_)
 
@@ -315,18 +292,10 @@ a_imputed <- a_imputed %>%
     BPA = BPA * sgratio_bpa,
     BP = B_PB * sgratio_bpa,
     MP = M_PB * sgratio_bpa,
-    PP = P_PB * sgratio_bpa,
+    PP = P_PB * sgratio_bpa
 
-    # Excluded due to >40% missing:
-    #BPS = BPS * sgratio_bpa,     # 64.9% missing
-    #BPF = BPF * sgratio_bpa,     # 85.9% missing
-    #BP3 = BP_3 * sgratio_bpa,    # 41.0% missing
-    #TCS = TCS * sgratio_bpa      # 41.0% missing
-
-    # OPFR metabolites excluded - sgratio_opfr has 74.7% missing:
-    #BDCIPP_sg = BDCIPP * sgratio_opfr  # 78.5% missing
-    #DPHP_sg = DPHP * sgratio_opfr      # 76.6% missing
-    #ipPPP_sg = ipPPP * sgratio_opfr    # 78.7% missing
+    # Note: BPS, BPF, BP3, TCS excluded due to >40% missing
+    # Note: OPFR metabolites (BDCIPP, DPHP, ipPPP) excluded - sgratio_opfr has 74.7% missing
   ) %>%
   relocate(study_id, .before = 1)  # Ensure study_id is first column
 

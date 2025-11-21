@@ -11,20 +11,12 @@ pacman::p_load(
   mgcViz,
   mgcv,
   ggh4x,
-  ggrepel
+  ggrepel,
+  SuperLearner,
+  gridExtra
 )
 
-thm <- theme_classic() +
-  theme(
-    legend.position = "top",
-    legend.background = element_rect(fill = "transparent", colour = NA),
-    legend.key = element_rect(fill = "transparent", colour = NA)
-  )
-theme_set(thm)
-
 load(here("data", "afc_clean_notrunc_IF.Rdata"))
-
-names(afc_clean_notrunc)
 
 if_data <- afc_clean_notrunc %>%
   select(dr_scores)
@@ -34,6 +26,7 @@ if_data <- data.frame(if_data)
 names(if_data) <- c("dr_scores")
 
 # 17 EDC variables with <40% missing (16 SG-adjusted + 1 Hg)
+# (defined in file 1. AFC_data_man.R)
 env_vars <- c("MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
               "MCPP", "MEP", "MBzP", "sumDEHP",
               "BPA", "BP", "MP", "PP",
@@ -296,26 +289,8 @@ plot_list <- lapply(seq_along(var_names), function(i) {
 # Combine plots
 grid.arrange(grobs = plot_list, ncol = ncol_grid)
 
-ggsave(filename = here("figures", "cate_functions_full.png"),
+ggsave(filename = here("figures", "cate_functions_paper.png"),
        width = 20, height = 20, units = "cm", dpi = 300)
-
-## Subset of the EDCs for detailed view
-var_names <- c("Hg", "BP")
-ncol_grid <- 2
-plot_list <- lapply(seq_along(var_names), function(i) {
-  var <- var_names[i]
-  show_ylab <- (i - 1) %% ncol_grid == 0
-  create_cate_plot_sl(var, afc_clean_notrunc, x_labels[var], res_dat$estimate,
-                      show_ylab = show_ylab)
-})
-
-# Combine plots
-grid.arrange(grobs = plot_list, ncol = ncol_grid)
-
-ggsave(filename = here("figures", "cate_functions.png"),
-       width = 20, height = 20, units = "cm", dpi = 300)
-
-
 
 
 

@@ -47,6 +47,42 @@ This report presents the complete analysis pipeline for examining whether and ho
 
 ---
 
+# Step 0: Missing Data Analysis and Imputation
+
+This section summarizes the missing data patterns in the raw EARTH Study data and describes the random forest imputation approach used to handle missingness before analysis.
+
+## Missing Data Summary
+
+```{r missing-summary}
+missing_summary <- readRDS(here("output", "missing_data_summary.rds"))
+knitr::kable(missing_summary, caption = "Missing Data Summary by Variable")
+```
+
+This table shows the extent of missing data for each variable in the raw dataset. Variables with more than 40% missingness were excluded from the analysis (including BPS, BPF, BP3, TCS, and all OPFR metabolites).
+
+## Missing Data Visualization
+
+![Missing data patterns by variable](../figures/missing_by_variable.png)
+
+This bar chart visualizes the percentage of missing values for each variable, making it easy to identify which variables have substantial missingness.
+
+## Distribution Comparison: Original vs Imputed
+
+![Comparison of distributions before and after imputation](../figures/imputation_comparison.png)
+
+This multi-panel figure compares the distributions of observed data (blue, solid line) versus complete imputed data (red, solid line) for the 12 variables with the most missing values. The similarity between distributions suggests that the random forest imputation preserved the underlying data structure.
+
+## Imputation Performance
+
+```{r imputation-error}
+imputation_error <- readRDS(here("output", "imputation_error.rds"))
+knitr::kable(imputation_error, caption = "Random Forest Imputation Out-of-Bag Error Estimates")
+```
+
+The out-of-bag (OOB) error estimates provide measures of imputation accuracy. NRMSE (normalized root mean squared error) applies to continuous variables, while PFC (proportion falsely classified) applies to categorical variables. Lower values indicate better imputation performance.
+
+---
+
 # Step 1: Data Management and Preprocessing
 
 This section presents summary statistics from the initial data management and preprocessing stage. We examine the distribution of antral follicle count (AFC) by diminished ovarian reserve (DOR) status, overall data quality metrics, and key summary statistics for our analysis variables.
@@ -189,8 +225,16 @@ This forest plot visualizes the test statistics from the best linear projection 
 
 ## CATE Functions by Chemical Exposure
 
-![Conditional average treatment effect functions across chemical exposure gradients](../figures/cate_functions_full.png)
+### Linear CATE Functions (All Chemicals)
 
-This multi-panel figure displays the estimated association functions, showing how the age-AFC association changes across the distribution of each chemical exposure. 
+![Linear CATE functions for all 17 environmental chemicals](../figures/cate_functions_full_linear.png)
+
+This multi-panel figure displays the estimated CATE functions using simple linear models for all 17 environmental chemicals. Each panel shows how the age-AFC association (y-axis) changes linearly across the log-transformed distribution of each chemical exposure (x-axis). The horizontal dashed line represents the overall average treatment effect.
+
+### SuperLearner CATE Functions (Selected Chemicals)
+
+![SuperLearner-based CATE functions for selected chemicals](../figures/cate_functions_paper.png)
+
+This figure shows the CATE functions estimated using SuperLearner ensemble methods for selected chemicals of interest (MCOP and MiBP). The SuperLearner approach automatically selects the optimal smoothing method from a library of candidates (LOESS with varying span parameters for MCOP, and GAM with varying degrees for MiBP), providing data-adaptive flexible estimation of potentially non-linear relationships. The black line represents the estimated CATE function, with the rug plot at the bottom showing the distribution of observed exposure values. 
 
 

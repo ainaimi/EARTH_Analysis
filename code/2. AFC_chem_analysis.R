@@ -12,36 +12,23 @@ pacman::p_load(
   MVN          # For multivariate normality and outlier tests
 )
 
-thm <- theme_classic() +
-  theme(
-    legend.position = "top",
-    legend.background = element_rect(fill = "transparent", colour = NA),
-    legend.key = element_rect(fill = "transparent", colour = NA)
-  )
-theme_set(thm)
-
 ## goal of this program is to explore distribution of environmental exposures 
 ## in EARTH data
 ## 
 ## Compare both trimmed and untrimmed versions
 
-load(here("data", "afc_clean_trunc.Rdata")) 
-
-load(here("data", "afc_clean_notrunc.Rdata")) 
-
-head(afc_clean_notrunc)
-head(afc_clean_trunc)
+load(here("data", "afc_clean_trunc.Rdata"))
+load(here("data", "afc_clean_notrunc.Rdata"))
 
 ## some basic outlier / leverage analyses
 ## do the people with extreme chem values also have large outcome values?
 ##
 # 17 EDC variables with <40% missing (16 SG-adjusted + 1 Hg)
+# (defined in file 1. AFC_data_man.R)
 env_vars <- c("MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
               "MCPP", "MEP", "MBzP", "sumDEHP",
               "BPA", "BP", "MP", "PP",
               "Hg")
-
-dim(afc_clean_trunc[,env_vars])
 
 plot_distributions <- function(data, variables, 
                                ncol = 4, title = NULL,
@@ -315,8 +302,7 @@ p4 <- ggplot(multivar_data, aes(x = 1:nrow(multivar_data), y = .cooksd)) +
              color = "red") +
   scale_color_manual(values = c("gray50", "red"),
                      labels = c("Normal", "High Influence")) +
-  #scale_y_log10() +
-  labs(title = "Cook's Distance (Log Scale)",
+  labs(title = "Cook's Distance",
        x = "Observation",
        y = "Cook's Distance",
        color = "Influence") +
