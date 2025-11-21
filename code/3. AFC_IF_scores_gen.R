@@ -1,19 +1,18 @@
 pacman::p_load(
-  rio,          
-  here,         
-  skimr,    
+  rio,
+  here,
+  skimr,
   tidyverse,
   parallel,
   scales,
   haven,
   lmtest,
   sandwich,
-  grf,
   SuperLearner,
   pROC,
   broom,
   xtable,
-  gridExtra, 
+  gridExtra,
   vip,
   ranger,
   xgboost,
@@ -103,73 +102,13 @@ covariates_matrix <- data.frame(model.matrix(formula(paste0("~",
 # use covariate set to construct design matrix that includes exposure
 covariates_matrix_w <- data.frame(covariates_matrix, age_bin = exposure)
 
-## causal forest
 # for reproducibility, we set the seed
 set.seed(123)
 
-# construct a sample size variable 
+# construct a sample size variable
 n <- nrow(new_afc)
 
-# We use 10-fold cross fitting, and determine precisely which of the 775 women get assigned to each fold:
-num.folds <- 10
-folds <- sort(seq(n) %% num.folds) + 1
-
-# we construct a causal forest using the `causal_forest` function from the grf package:
-forest <- causal_forest(X = covariates_matrix, 
-                        Y = outcome, 
-                        W = exposure, 
-                        num.trees = 2000,
-                        honesty = TRUE,
-                        min.node.size = 20,
-                        alpha = .05, 
-                        imbalance.penalty = 0,
-                        stabilize.splits = TRUE,
-                        tune.parameters = "all",
-                        tune.num.trees = 2000,
-                        tune.num.reps = 500,
-                        tune.num.draws = 1000,
-                        compute.oob.predictions = T,
-                        #num.threads = 10,
-                        #seed = 123,
-                        clusters = folds)
-
-forest
-
-VarImpRf <- data.frame(Variable = names(covariates_matrix), 
-                       Importance = variable_importance(forest))
-
-names(VarImpRf) <- c("Variable", "Importance")
-
-a <- roc(factor(exposure), forest$W.hat, direction="auto") 
-plot_dat_pi <- data.frame(sens=a$sensitivities,spec=a$specificities)
-
-## propensity score overlap plot
-plot_dat_ps <- tibble(`Propensity Score` = forest$W.hat,
-                      Exposure = factor(exposure))
-
-rf_ps_overlap_plot <- ggplot(plot_dat_ps) + 
-  geom_density(aes(x = `Propensity Score`, 
-                   group = Exposure, 
-                   fill = Exposure), alpha = .5) +
-  scale_x_continuous(expand = c(0,0), limits = c(0,1)) +
-  scale_y_continuous(expand = c(0,0)) +
-  ggtitle("Causal Forest")
-
-rf_ps_overlap_plot
-
-# we then use the `average_treatment_effect()` function to obtain an ATE estimate
-cf_ate <- average_treatment_effect(forest) # this code shows that it's using AIPW or TMLE to get ATE.
-
-# this treatment effect is obtained via random forests using singly robust estimator
-cf_ate <- cbind(t(cf_ate), 
-                cf_ate[1] - 1.96*cf_ate[2],
-                cf_ate[1] + 1.96*cf_ate[2])
-
-colnames(cf_ate)[3:4] <- c("LCL", "UCL")
-
-cf_ate
-
-## now the dr learner
+## DR learner with SuperLearner
 mean_learner <- "SL.mean"
 glm_learner <- "SL.glm"
 
@@ -288,36 +227,25 @@ VarImpSL <- vi_permute(object = fit_mu_2,
 VarImpSL <- VarImpSL[,c("Variable","Importance")]
 
 VarImpSL$Model <- "Super Learner"
-VarImpRf$Model <- "Causal Forest"
 
-VarImp <- rbind(VarImpRf, VarImpSL)
+VarImp <- VarImpSL
 
-mean_for_rank <- VarImp %>% 
-  group_by(Variable) %>% 
-  summarize(meanVI = mean(Importance))
+VarImp <- VarImp %>% arrange(desc(Importance))
+var_names <- unique(VarImp$Variable)
 
-VarImp <- left_join(VarImp, mean_for_rank, by = "Variable")
-var_names <- unique(VarImp[order(-VarImp$meanVI),]$Variable)
-#var_names <- var_names[env_vars][1:5] # to save for later...
-
-ggplot(VarImp) + 
-  geom_bar(aes(x = reorder(Variable, -meanVI), 
-               y = Importance, 
-               fill = Model),
-           position="dodge", 
+ggplot(VarImp) +
+  geom_bar(aes(x = reorder(Variable, -Importance),
+               y = Importance),
+           fill = "steelblue",
            stat="identity") +
-  theme(axis.text.x = element_text(angle = 70, 
-                                   vjust = 0.5, 
+  theme(axis.text.x = element_text(angle = 70,
+                                   vjust = 0.5,
                                    hjust=.5)) +
   scale_y_continuous(expand = c(0,0))
 
 ggsave(filename = here("figures", "variable_importance_plot.png"), units = "cm", height = 16, width = 16, dpi = 300)
 
-## create separate variable list for cf versus drl
-
-var_names_rf <- unique(VarImpRf[order(-VarImpRf$Importance),]$Variable)
-var_names_rf <- var_names_rf[var_names_rf %in% env_vars] # to save for later...
-
+## create variable list for environmental chemicals
 var_names_sl <- unique(VarImpSL[order(-VarImpSL$Importance),]$Variable)
 var_names_sl <- var_names_sl[var_names_sl %in% env_vars] # to save for later...
 
@@ -325,21 +253,18 @@ var_names_sl <- var_names_sl[var_names_sl %in% env_vars] # to save for later...
 plot_dat_ps <- tibble(`Propensity Score` = fit_pi$SL.predict,
                       Exposure = factor(exposure))
 
-sl_ps_overlap_plot <- ggplot(plot_dat_ps) + 
-  geom_density(aes(x = `Propensity Score`, 
-                   group = Exposure, 
+ps_overlap_plot <- ggplot(plot_dat_ps) +
+  geom_density(aes(x = `Propensity Score`,
+                   group = Exposure,
                    fill = Exposure), alpha = .5) +
   scale_x_continuous(expand = c(0,0), limits = c(0,1)) +
   scale_y_continuous(expand = c(0,0)) +
-  ggtitle("Super Learner")
+  ggtitle("Propensity Score Overlap")
 
-sl_ps_overlap_plot
+ps_overlap_plot
 
-ps_overlap <- grid.arrange(rf_ps_overlap_plot,
-                           sl_ps_overlap_plot)
-
-ggsave(plot = ps_overlap, filename = here("figures", "ps_overlap_plot.png"),
-       units = "cm", height = 16, width = 10, dpi = 300)
+ggsave(plot = ps_overlap_plot, filename = here("figures", "ps_overlap_plot.png"),
+       units = "cm", height = 16, width = 16, dpi = 300)
 
 # Again, with these diagnostics complete, we can construct and ATE estimate using the double robust AIPW estimator, with the exposure and outcome models obtained via stacking:
 
@@ -399,18 +324,16 @@ colnames(aipw_ate) <- c("estimate", "std.err", "LCL", "UCL")
 
 aipw_ate
 
-res_ate <-  rbind(cf_ate,
-                  aipw_ate)
+res_ate <- aipw_ate
 
-row.names(res_ate) <- c("Causal Forest", "AIPW with Stacking")
+row.names(res_ate) <- c("AIPW with Stacking")
 
 res_ate
 
 saveRDS(res_ate, here("output", "ate_results.rds"))
 
-afc_clean_notrunc <- afc_clean_notrunc %>% 
-  mutate(forest_scores = get_scores(forest),
-         dr_scores = unlist(aipw_score))
+afc_clean_notrunc <- afc_clean_notrunc %>%
+  mutate(dr_scores = unlist(aipw_score))
 
 save(afc_clean_notrunc, 
      file = here("data", "afc_clean_notrunc_IF.Rdata"))

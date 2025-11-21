@@ -43,7 +43,6 @@ This report presents the complete analysis pipeline for examining whether and ho
 **Study Population:** 775 women aged 21-46 years
 
 **Methods:**
-- Causal Forest (generalized random forests)
 - DR Learner (doubly robust learner with SuperLearner)
 
 ---
@@ -158,7 +157,7 @@ This figure displays the relative importance of covariates in predicting antral 
 
 ![Assessment of propensity score overlap across age distribution](../figures/ps_overlap_plot.png)
 
-This plot propensity score overlap from both the causal forest and super learner approaches.
+This plot shows the propensity score overlap from the SuperLearner approach, displaying the density of predicted propensity scores for treatment (age ≥ 35) and control (age < 35) groups.
 
 ## Average Treatment Effect (ATE) Results
 
@@ -184,9 +183,9 @@ This table presents the heterogeneity analysis by projecting the estimated CATEs
 
 ## Heterogeneity Test Statistics
 
-![Scatterplot of heterogeneity test statistics across chemical exposures](../figures/teststat_scatter.png)
+![Forest plot of heterogeneity test statistics across chemical exposures](../figures/teststat_scatter.png)
 
-This scatterplot of absolute test statistic values visualizes how much the association changes as a function of the environmental exposure, accounting for variability in the projection estimates.  heterogeneity across all chemical exposures examined in the analysis. The plot allows quick identification of which chemicals show the strongest evidence for effect modification. 
+This forest plot visualizes the test statistics from the best linear projection analysis, showing the strength of evidence for effect modification by each chemical exposure. Chemicals are ordered by test statistic magnitude, with reference lines indicating different significance thresholds. The plot allows quick identification of which chemicals show the strongest evidence for effect modification. 
 
 ## CATE Functions by Chemical Exposure
 

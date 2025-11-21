@@ -22,16 +22,16 @@ thm <- theme_classic() +
   )
 theme_set(thm)
 
-load(here("data", "afc_clean_notrunc_IF.Rdata")) 
+load(here("data", "afc_clean_notrunc_IF.Rdata"))
 
 names(afc_clean_notrunc)
 
-if_data <- afc_clean_notrunc %>% 
-  select(forest_scores, dr_scores) 
+if_data <- afc_clean_notrunc %>%
+  select(dr_scores)
 
 if_data <- data.frame(if_data)
 
-names(if_data) <- c("forest_scores", "dr_scores")
+names(if_data) <- c("dr_scores")
 
 # 17 EDC variables with <40% missing (16 SG-adjusted + 1 Hg)
 env_vars <- c("MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
@@ -43,33 +43,29 @@ env_vars <- c("MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
 ate_func <- function(a){
 
   a <- unlist(a)
-  
+
   aipw_psi <- mean(a)
-  
+
   aipw_se <- sd(a)/sqrt(length(a))
-  
+
   aipw_ate <- c(aipw_psi, aipw_se)
-  
-  aipw_ate <- cbind(t(aipw_ate), 
+
+  aipw_ate <- cbind(t(aipw_ate),
                     aipw_ate[1] - 1.96*aipw_ate[2],
-                    aipw_ate[1] + 1.96*aipw_ate[2])  
-  
+                    aipw_ate[1] + 1.96*aipw_ate[2])
+
   colnames(aipw_ate) <- c("estimate", "std.err", "LCL", "UCL")
-  
+
   return(aipw_ate)
 }
 
-res_ate <-  rbind(ate_func(if_data[,1]),
-                  ate_func(if_data[,2]))
+res_ate <- ate_func(if_data[,1])
 
-row.names(res_ate) <- c("Causal Forest", "AIPW with Stacking")
+row.names(res_ate) <- c("AIPW with Stacking")
 
 res_ate
 
 res_dat <- data.frame(res_ate)
-
-# construct LaTeX Table:
-# xtable(res_ate)
 
 
 GGally::ggpairs(log(afc_clean_notrunc[,env_vars]))
@@ -77,7 +73,6 @@ GGally::ggpairs(log(afc_clean_notrunc[,env_vars]))
 #### DR Learner
 ## conditional models
 lin_proj <- data.frame(if_data, afc_clean_notrunc[,env_vars]) %>%
-  select(-forest_scores) %>%
   mutate(across(all_of(env_vars), log))
 model_dr_cond <- lm(dr_scores ~ ., data = lin_proj)
 dr_learner_conditional <- tidy(coeftest(model_dr_cond, vcov = vcovHC(model_dr_cond, type = "HC3"))) %>%
@@ -94,88 +89,33 @@ dr_learner_unconditional <- map_dfr(env_vars, function(var) {
 dr_learner_unconditional <- dr_learner_unconditional  %>%
   rename_with(~ paste0("dr_", .), .cols = -term)
 
+table2_conditional <- dr_learner_conditional %>%
+  mutate(Type = "conditional", .before=1)
 
-#### Causal Forest
-## conditional models
-lin_proj <- data.frame(if_data, afc_clean_notrunc[,env_vars]) %>%
-  select(-dr_scores) %>%
-  mutate(across(all_of(env_vars), log))
-model_cf_cond <- lm(forest_scores ~ ., data = lin_proj)
-causal_for_conditional <- tidy(coeftest(model_cf_cond, vcov = vcovHC(model_cf_cond, type = "HC3"))) %>%
-  filter(term != "(Intercept)")
-causal_for_conditional <- causal_for_conditional  %>%
-  rename_with(~ paste0("cf_", .), .cols = -term)
-# unconditional models
-causal_for_unconditional <- map_dfr(env_vars, function(var) {
-  formula_str <- paste("forest_scores ~", var)
-  model <- lm(as.formula(formula_str), data = lin_proj)
-  tidy(coeftest(model, vcov = vcovHC(model, type = "HC3"))) %>%
-    filter(term != "(Intercept)")  # Keep only the env_var coefficient
-})
-causal_for_unconditional <- causal_for_unconditional  %>%
-  rename_with(~ paste0("cf_", .), .cols = -term)
-
-
-table2_conditional <- left_join(dr_learner_conditional, 
-                                causal_for_conditional, 
-                                by = "term") %>% mutate(Type = "conditional", .before=1)
-
-
-table2_unconditional <- left_join(dr_learner_unconditional, 
-                                  causal_for_unconditional, 
-                                  by = "term") %>% mutate(Type = "unconditional", .before=1)
+table2_unconditional <- dr_learner_unconditional %>%
+  mutate(Type = "unconditional", .before=1)
 
 table2 <- rbind(table2_unconditional, table2_conditional) 
 
 saveRDS(table2, file = here("output", "linear_projection_output.rds"))
 
+# Create forest plot of DR learner test statistics
 label_data <- table2 %>%
-  filter(abs(dr_statistic) > 1.28 | abs(cf_statistic) > 1.28 | term %in% c("BP", "MBP")) %>%
-  mutate(
-    nudge_x_val = case_when(
-      term == "Hg" & Type == "conditional" ~ 0.5,      # move right a lot
-      term == "MBP" & Type == "conditional" ~ -0.5,    # move left
-      term == "MBP" & Type == "unconditional" ~ -0.5,
-      term %in% c("BP", "MBP", "MEHP", "MCOP") ~ 0.3,
-      TRUE ~ -0.3
-    ),
-    nudge_y_val = case_when(
-      term == "Hg" & Type == "unconditional" ~ 0.2,    # move slightly up
-      term == "Hg" & Type == "conditional" ~ -0.5,     # move down a lot
-      term == "BP" & Type == "conditional" ~ -0.2,     # move slightly down
-      term == "MiBP" & Type == "unconditional" ~ 0.6,  # move up a lot
-      term %in% c("BP", "mBP", "MEHP", "MCOP") ~ -0.3,
-      TRUE ~ 0.3
-    )
-  )
+  filter(abs(dr_statistic) > 1.28 | term %in% c("BP", "Hg"))
 
-ggplot(table2) +
-geom_abline(intercept = 0, slope = 1, color = "gray", linetype = "dashed") +
-geom_vline(xintercept = c(-1.645, 1.645), color = "gray90", linetype = "dotted") +
-geom_hline(yintercept = c(-1.645, 1.645), color = "gray90", linetype = "dotted") +
-geom_vline(xintercept = c(-1.44, 1.44), color = "gray60", linetype = "dotted") +
-geom_hline(yintercept = c(-1.44, 1.44), color = "gray60", linetype = "dotted") +
-geom_vline(xintercept = c(-1.28, 1.28), color = "gray30", linetype = "dotted") +
-geom_hline(yintercept = c(-1.28, 1.28), color = "gray30", linetype = "dotted") +
-geom_point(aes(x = dr_statistic,
-               y = cf_statistic, group = Type, shape = Type), size = 3) +
-  scale_shape_manual(values = c(16, 3)) +
-geom_text_repel(data = label_data,
-                aes(label = term, x = dr_statistic, y = cf_statistic),
-                nudge_x = label_data$nudge_x_val,
-                nudge_y = label_data$nudge_y_val,
-                segment.color = "black",
-                segment.size = 0.5,
-                arrow = arrow(length = unit(0.01, "npc"), type = "closed"),
-                box.padding = 0.5,
-                point.padding = 0.3) +
-ylim(-3,3) + xlim(-3,3) +
-xlab("Test Statistic, DR Learner") +
-ylab("Test Statistic, Causal Forest") +
-theme_classic(base_size = 16)+
-  theme(legend.position = c(0.05, 1),
-        legend.justification = c(0, 1))
-
+ggplot(table2, aes(x = dr_statistic, y = reorder(term, dr_statistic))) +
+  geom_vline(xintercept = 0, color = "gray", linetype = "solid") +
+  geom_vline(xintercept = c(-1.96, 1.96), color = "gray70", linetype = "dashed") +
+  geom_vline(xintercept = c(-1.645, 1.645), color = "gray50", linetype = "dotted") +
+  geom_vline(xintercept = c(-1.28, 1.28), color = "gray30", linetype = "dotted") +
+  geom_point(aes(shape = Type), size = 3) +
+  scale_shape_manual(values = c(16, 1)) +
+  xlim(-3, 3) +
+  xlab("Test Statistic, DR Learner") +
+  ylab("Environmental Chemical") +
+  theme_classic(base_size = 16) +
+  theme(legend.position = c(0.95, 0.05),
+        legend.justification = c(1, 0))
 
 ggsave(filename = here("figures", "teststat_scatter.png"),
        width = 16, height = 16, units = "cm", dpi = 300)
@@ -210,38 +150,34 @@ x_labels <- c(
 create_cate_plot <- function(var_name, data, x_label, ate_estimates, show_ylab = TRUE) {
   # Select and clean data for this variable
   plot_data <- data %>%
-    select(forest_scores, dr_scores, all_of(var_name)) %>%
+    select(dr_scores, all_of(var_name)) %>%
     mutate(across(all_of(var_name), ~log(. + 0.01)))
-  
+
   # Build formula dynamically for linear models
-  formula_str <- paste0("forest_scores ~ ", var_name)
   formula_dr_str <- paste0("dr_scores ~ ", var_name)
-  
-  # Fit linear models
-  model_forest <- lm(as.formula(formula_str), data = plot_data)
+
+  # Fit linear model
   model_dr <- lm(as.formula(formula_dr_str), data = plot_data)
-  
+
   # Add predictions to data
-  plot_data$pred_forest <- predict(model_forest)
   plot_data$pred_dr <- predict(model_dr)
   plot_data$log_var <- plot_data[[var_name]]
-  
+
   # Create plot
   p <- ggplot(plot_data, aes(x = log_var)) +
-    geom_line(aes(y = pred_forest), color = "black") +
-    geom_line(aes(y = pred_dr), color = "black", linetype = "dashed") +
+    geom_line(aes(y = pred_dr), color = "black") +
     geom_rug(sides = "b", length = unit(2, "mm")) +
     geom_hline(yintercept = ate_estimates, color = "gray", linetype = "dashed") +
-    xlab(x_label) + ylim(-8, -2) + 
+    xlab(x_label) + ylim(-8, -2) +
     theme_classic(base_size = 10)
-  
+
   # Conditionally add y-axis label
   if (show_ylab) {
     p <- p + ylab("Age-AFC Association")
   } else {
     p <- p + ylab(NULL)
   }
-  
+
   return(p)
 }
 
@@ -261,83 +197,116 @@ grid.arrange(grobs = plot_list, ncol = ncol_grid)
 ggsave(filename = here("figures", "cate_functions_full_linear.png"),
        width = 20, height = 20, units = "cm", dpi = 300)
 
-## subset of the EDCs
-var_names <- c("MEHP", "MCOP", "MiBP")
-ncol_grid <- 2
-plot_list <- lapply(seq_along(var_names), function(i) {
-  var <- var_names[i]
-  show_ylab <- (i - 1) %% ncol_grid == 0
-  create_cate_plot(var, afc_clean_notrunc, x_labels[var], res_dat$estimate,
-                   show_ylab = show_ylab)
-})
-
-# Combine plots
-grid.arrange(grobs = plot_list, ncol = 3)
-
-# Function with flexible splines (GAM)
-create_cate_plot <- function(var_name, data, x_label, ate_estimates, show_ylab = TRUE, k = 4) {
+## SuperLearner-based CATE function estimation
+# Create custom learner wrapper for EARTH
+loess_learner <- create.Learner("SL.loess", tune = list(span = seq(1,2,by=.05)))
+gam_learner <- create.Learner("SL.gam", tune = list(deg.gam = seq(1,3)))
+set.seed(123)
+# Function with SuperLearner that uses different learners based on chemical
+create_cate_plot_sl <- function(var_name, data, x_label, ate_estimates, show_ylab = TRUE) {
   # Select and clean data for this variable
   plot_data <- data %>%
-    select(forest_scores, dr_scores, all_of(var_name)) %>%
-    mutate(across(all_of(var_name), ~log(. + 0.01)))
+    select(dr_scores, all_of(var_name)) %>%
+    mutate(across(all_of(var_name), ~log(. + 0.01))) %>%
+    drop_na()  # Remove any NA values
 
-  # Build formula dynamically with smoothing splines
-  # k controls the basis dimension (flexibility)
-  formula_str <- paste0("forest_scores ~ s(", var_name, ", k=", k, ")")
-  formula_dr_str <- paste0("dr_scores ~ s(", var_name, ", k=", k, ")")
+  # Extract predictor variable and sort by it
+  x_vals <- plot_data[[var_name]]
+  sort_order <- order(x_vals)
+  x_sorted <- x_vals[sort_order]
+  y_dr_sorted <- plot_data$dr_scores[sort_order]
 
-  # Fit GAM models with splines
-  model_forest <- gam(as.formula(formula_str), data = plot_data)
-  model_dr <- gam(as.formula(formula_dr_str), data = plot_data)
+  # Prepare data for SuperLearner
+  X_train <- data.frame(x = x_sorted)
 
-  # Add predictions to data
-  plot_data$pred_forest <- predict(model_forest)
-  plot_data$pred_dr <- predict(model_dr)
-  plot_data$log_var <- plot_data[[var_name]]
+  # Select SuperLearner library based on chemical
+  if (var_name == "MCOP") {
+    SL.library <- loess_learner$names
+    cat("\nUsing LOESS learner for", var_name, "\n")
+  } else if (var_name == "MiBP") {
+    SL.library <- gam_learner$names
+    cat("\nUsing GAM learner for", var_name, "\n")
+  } else {
+    SL.library <- loess_learner$names  # Default to loess
+    cat("\nUsing default LOESS learner for", var_name, "\n")
+  }
+
+  num.folds <- 10
+  folds <- sort(seq(nrow(plot_data)) %% num.folds) + 1
+  fold_dat <- tibble(id = 1:nrow(plot_data), folds)
+  fold_index <- split(fold_dat$id, fold_dat$folds)
+
+  # Fit SuperLearner model on full data
+  sl_dr <- SuperLearner(Y = y_dr_sorted,
+                        X = X_train,
+                        SL.library = SL.library,
+                        family = gaussian(),
+                        cvControl = list(V = num.folds, validRows = fold_index))
+
+  # Create prediction grid
+  x_grid <- seq(min(x_sorted), max(x_sorted), length.out = 200)
+  X_pred <- data.frame(x = x_grid)
+
+  # Get predictions
+  pred_dr <- predict(sl_dr, newdata = X_pred, onlySL = TRUE)$pred
+
+  # Create prediction dataframe
+  pred_data <- data.frame(
+    log_var = x_grid,
+    pred_dr = pred_dr
+  )
+
+  # Keep original data for rug plot
+  plot_data$log_var <- x_vals
 
   # Create plot
-  p <- ggplot(plot_data, aes(x = log_var)) +
-    geom_line(aes(y = pred_forest), color = "black") +
-    geom_line(aes(y = pred_dr), color = "black", linetype = "dashed") +
-    geom_rug(sides = "b", length = unit(2, "mm")) +
+  p <- ggplot() +
+    geom_line(data = pred_data, aes(x = log_var, y = pred_dr),
+              color = "black", linewidth = 1) +
+    geom_rug(data = plot_data, aes(x = log_var), sides = "b", length = unit(2, "mm")) +
     geom_hline(yintercept = ate_estimates, color = "gray", linetype = "dashed") +
     xlab(x_label) + ylim(-8, -2) +
     theme_classic(base_size = 10)
-  
+
   # Conditionally add y-axis label
   if (show_ylab) {
     p <- p + ylab("Age-AFC Association")
   } else {
     p <- p + ylab(NULL)
   }
-  
+
+  # Print SuperLearner weights for diagnostic purposes
+  cat("\nSuperLearner weights for", var_name, "(DR scores):\n")
+  print(sl_dr$coef)
+  cat("\n")
+
   return(p)
 }
 
-# Create all plots for all EDCs
-
-ncol_grid <- 3
+# Create plots for all 17 EDCs using SuperLearner
+var_names <- c("MCOP","MiBP")
+ncol_grid <- 2
 plot_list <- lapply(seq_along(var_names), function(i) {
   var <- var_names[i]
   show_ylab <- (i - 1) %% ncol_grid == 0
-  create_cate_plot(var, afc_clean_notrunc, x_labels[var], res_dat$estimate,
-                   show_ylab = show_ylab)
+  create_cate_plot_sl(var, afc_clean_notrunc, x_labels[var], res_dat$estimate,
+                      show_ylab = show_ylab)
 })
 
 # Combine plots
-grid.arrange(grobs = plot_list, ncol = 3)
+grid.arrange(grobs = plot_list, ncol = ncol_grid)
 
 ggsave(filename = here("figures", "cate_functions_full.png"),
        width = 20, height = 20, units = "cm", dpi = 300)
 
-## subset of the EDCs
+## Subset of the EDCs for detailed view
 var_names <- c("Hg", "BP")
 ncol_grid <- 2
 plot_list <- lapply(seq_along(var_names), function(i) {
   var <- var_names[i]
   show_ylab <- (i - 1) %% ncol_grid == 0
-  create_cate_plot(var, afc_clean_notrunc, x_labels[var], res_dat$estimate,
-                   show_ylab = show_ylab, k = 6)
+  create_cate_plot_sl(var, afc_clean_notrunc, x_labels[var], res_dat$estimate,
+                      show_ylab = show_ylab)
 })
 
 # Combine plots
@@ -371,22 +340,3 @@ ggsave(filename = here("figures", "cate_functions.png"),
 
 
 
-# Prepare data
-plot_data <- afc_clean_notrunc %>%
-  select(forest_scores, dr_scores, MEHP, MCOP, MiBP) %>%
-  mutate(across(c(MEHP, MCOP, MiBP), ~log(. + 0.01))) %>%
-  pivot_longer(cols = c(MEHP, MCOP, MiBP),
-               names_to = "chemical",
-               values_to = "log_concentration")
-
-# Plot
-ggplot(plot_data) +
-  geom_point(aes(x = log_concentration, y = forest_scores),
-             color = "black", alpha = 0.5) +
-  geom_point(aes(x = log_concentration, y = dr_scores),
-             color = "red", alpha = 0.5) +
-  facet_wrap(~chemical, scales = "free_x") +
-  labs(x = "Log Concentration",
-       y = "IF Scores",
-       title = "Forest (black) vs DR (red) Scores") +
-  theme_classic()
