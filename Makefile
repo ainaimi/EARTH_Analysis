@@ -11,8 +11,10 @@ CODE_DIR := code
 DATA_DIR := data
 FIG_DIR := figures
 MISC_DIR := misc
+OUTPUT_DIR := output
 
 # Data outputs from each step
+IMPUTED_DATA := $(DATA_DIR)/imputed_EARTH.Rdata
 DATA_OUTPUTS := $(DATA_DIR)/afc_clean_trunc.Rdata $(DATA_DIR)/afc_clean_notrunc.Rdata
 CHEM_OUTPUTS := $(FIG_DIR)/.chem_analysis_done
 IF_OUTPUTS := $(MISC_DIR)/fit_mu.RDS $(MISC_DIR)/fit_pi.RDS
@@ -29,8 +31,18 @@ all: $(REPORT)
 	@echo "Report available at: $(REPORT)"
 	@echo "======================================"
 
+# Step 0: Data generation and imputation
+$(IMPUTED_DATA): $(CODE_DIR)/0.\ AFC_data_gen.R
+	@echo "======================================"
+	@echo "Step 0: Data Generation and Imputation"
+	@echo "This may take several minutes..."
+	@echo "======================================"
+	@mkdir -p $(OUTPUT_DIR)
+	cd $(CODE_DIR) && $(R) "0. AFC_data_gen.R"
+	@touch $(IMPUTED_DATA)
+
 # Step 1: Data management
-$(DATA_OUTPUTS): $(CODE_DIR)/1.\ AFC_data_man.R
+$(DATA_OUTPUTS): $(CODE_DIR)/1.\ AFC_data_man.R $(IMPUTED_DATA)
 	@echo "======================================"
 	@echo "Step 1: Data Management"
 	@echo "======================================"
@@ -73,7 +85,9 @@ $(REPORT): $(CODE_DIR)/EARTH_Analysis_Report.qmd $(ANALYSIS_OUTPUTS)
 	@echo "Report generated: $(REPORT)"
 
 # Individual step targets (can run steps independently)
-.PHONY: step1 step2 step3 step4 report
+.PHONY: step0 step1 step2 step3 step4 report
+
+step0: $(IMPUTED_DATA)
 
 step1: $(DATA_OUTPUTS)
 
@@ -105,8 +119,10 @@ clean-all: clean clean-report
 	@sleep 3
 	@echo "Removing all generated files..."
 	rm -rf $(FIG_DIR)/*
+	rm -rf $(OUTPUT_DIR)/*
 	rm -f $(MISC_DIR)/*.RDS
 	rm -f $(DATA_DIR)/*.Rdata
+	rm -f $(DATA_DIR)/*.rds
 	@echo "Clean complete. Data, figures, and outputs removed."
 
 # Help target
@@ -117,9 +133,10 @@ help:
 	@echo ""
 	@echo "Main targets:"
 	@echo "  make all          - Run entire pipeline and generate report"
-	@echo "  make report       - Generate HTML report (assumes steps 1-4 complete)"
+	@echo "  make report       - Generate HTML report (assumes steps 0-4 complete)"
 	@echo ""
 	@echo "Individual steps:"
+	@echo "  make step0        - Data generation and random forest imputation (slow)"
 	@echo "  make step1        - Data management"
 	@echo "  make step2        - Chemical analysis and outlier detection"
 	@echo "  make step3        - IF score generation (slow)"
