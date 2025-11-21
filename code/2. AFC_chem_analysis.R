@@ -34,10 +34,12 @@ head(afc_clean_trunc)
 
 ## some basic outlier / leverage analyses
 ## do the people with extreme chem values also have large outcome values?
-## 
-env_vars <- c("mEP1_sg", "mBZP1_sg", "mCNP_sg","miBP_sg",
-              "mBP_sg","BP_3_sg", "M_PB_sg", "dehp_sg", 
-              "BPA_sg", "mCOP_sg", "mCPP_sg", "B_PB_sg", "P_PB_sg", "Hg")
+##
+# 17 EDC variables with <40% missing (16 SG-adjusted + 1 Hg)
+env_vars <- c("MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
+              "MCPP", "MEP", "MBzP", "sumDEHP",
+              "BPA", "BP", "MP", "PP",
+              "Hg")
 
 dim(afc_clean_trunc[,env_vars])
 
@@ -83,7 +85,7 @@ plot_distributions <- function(data, variables,
   return(p)
 }
 
-plot_vars <- c("AFC_t", "age", env_vars)
+plot_vars <- c("AFCt", "age", env_vars)
 
 p_notrunc <- plot_distributions(
   data = afc_clean_notrunc,
@@ -108,7 +110,7 @@ ggsave(here("figures", "env_vars_trunc.png"), units = "cm", width = 16, height =
 ## multivariate outlier detection
 # Prepare multivariate data (outcome + all environmental variables)
 multivar_data <- afc_clean_notrunc %>%
-  select(AFC_t, age, all_of(env_vars)) 
+  select(AFCt, age, all_of(env_vars)) 
 
 cat("Sample size for outlier detection:", nrow(multivar_data), "\n")
 cat("Variables included:", ncol(multivar_data), "\n\n")
@@ -128,14 +130,14 @@ cat("--- Method 1: Mahalanobis Distance ---\n")
 
 # Calculate Mahalanobis distance
 mahala_dist <- mahalanobis(
-  x = multivar_data[, c("AFC_t", "age", env_vars)],
-  center = colMeans(multivar_data[, c("AFC_t", "age", env_vars)]),
-  cov = cov(multivar_data[, c("AFC_t", "age", env_vars)])
+  x = multivar_data[, c("AFCt", "age", env_vars)],
+  center = colMeans(multivar_data[, c("AFCt", "age", env_vars)]),
+  cov = cov(multivar_data[, c("AFCt", "age", env_vars)])
 )
 
 # Chi-square critical value (p < 0.001 for conservative threshold)
 # df = number of variables
-crit_value <- qchisq(0.999, df = length(c("AFC_t", "age", env_vars)))
+crit_value <- qchisq(0.999, df = length(c("AFCt", "age", env_vars)))
 
 multivar_data$mahala_dist <- mahala_dist
 multivar_data$mahala_outlier <- mahala_dist > crit_value
@@ -165,7 +167,7 @@ print(p1)
 cat("--- Method 2: PCA-Based Outliers ---\n")
 
 # Perform PCA (scale variables for fair comparison)
-pca_result <- prcomp(multivar_data[, c("AFC_t", "age", env_vars)],
+pca_result <- prcomp(multivar_data[, c("AFCt", "age", env_vars)],
                      scale. = TRUE,
                      center = TRUE)
 
@@ -243,7 +245,7 @@ plot(p2)
 cat("--- Method 3: Local Outlier Factor (LOF) ---\n")
 
 # Calculate LOF scores (k = 20 neighbors)
-lof_scores <- lof(multivar_data[, c("AFC_t", env_vars)], k = 20)
+lof_scores <- lof(multivar_data[, c("AFCt", env_vars)], k = 20)
 
 # LOF > 1.5 suggests outlier (observations in sparser regions)
 lof_threshold <- 1.5
@@ -274,14 +276,9 @@ p3 <- ggplot(multivar_data, aes(x = 1:nrow(multivar_data), y = lof_score)) +
 
 cat("--- Method 4: Regression Diagnostics ---\n")
 
-# Define environmental variables
-env_vars <- c("mEP1_sg", "mBZP1_sg", "mCNP_sg", "miBP_sg",
-              "mBP_sg", "BP_3_sg", "M_PB_sg", "dehp_sg",
-              "BPA_sg", "mCOP_sg", "mCPP_sg", "B_PB_sg", "P_PB_sg", "Hg")
-
 # Create formula: AFC_t ~ all chemicals
 formula_vars <- paste(env_vars, collapse = " + ")
-model_formula <- as.formula(paste0("AFC_t ~ ", formula_vars))
+model_formula <- as.formula(paste0("AFCt ~ ", formula_vars))
 
 # Fit linear model
 mod <- lm(model_formula, data = afc_clean_notrunc)
@@ -384,7 +381,7 @@ ggsave(here("figures", "outlier_heatmap.png"), units = "cm", width = 16, height 
 
 # Save outlier analysis results
 outlier_results <- multivar_data %>%
-  select(row_id, AFC_t, age, mahala_dist, mahala_outlier,
+  select(row_id, AFCt, age, mahala_dist, mahala_outlier,
          pc_dist, pc_outlier, lof_score, lof_outlier,
          .cooksd, high_cooksd, n_flags) %>%
   arrange(desc(n_flags), desc(mahala_dist))
@@ -399,7 +396,7 @@ cat("\nTop 10 observations flagged by multiple methods:\n")
 outliers_id <- outlier_results %>%
         filter(n_flags >= 2) %>%
         head(10) %>%
-        select(row_id, AFC_t, age, n_flags, mahala_outlier, pc_outlier, lof_outlier, high_cooksd)
+        select(row_id, AFCt, age, n_flags, mahala_outlier, pc_outlier, lof_outlier, high_cooksd)
 
 
 saveRDS(outliers_id, here("output", "outliers_id.rds"))

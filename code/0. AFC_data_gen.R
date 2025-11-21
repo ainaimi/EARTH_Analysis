@@ -63,6 +63,7 @@ a_ <- a %>% select(
   eversmok,
   educ1,
   gravid,
+  Hg,
   mBP,
   miBP,
   mCNP,
@@ -279,7 +280,16 @@ imputation_indicators <- a_ %>%
   mutate(study_id = study_id, .before = 1) %>%
   select(starts_with("imp_"), study_id) %>%
   # Remove indicators that are all zeros (no missingness)
-  select(where(~!all(. == 0)), study_id)
+  select(where(~!all(. == 0)), study_id) %>%
+  # Remove linearly dependent imputation flags (keep one representative from each group)
+  select(-imp_sgratio_bpa,        # identical to imp_sgratio_pht
+         -imp_miBP, -imp_mECPP, -imp_mEHHP, -imp_mEHP, -imp_mEOHP,  # identical to imp_sgratio_pht
+         -imp_mCPP, -imp_mEP1, -imp_mBZP1, -imp_dehp, -imp_BPA,     # identical to imp_sgratio_pht
+         -imp_mCOP,              # identical to imp_mCNP
+         -imp_M_PB, -imp_P_PB,   # identical to imp_B_PB
+         -imp_eversmok,          # identical to imp_smokstat
+         -imp_previousIVF,       # identical to imp_previousIUI
+         -imp_gravid)            # identical to imp_educ1
 
 # 7. Create specific gravity-adjusted EDC variables and add study_id
 # These variable names match the rename() function in 4. AFC_IF_scores_analysis.R
@@ -288,25 +298,36 @@ a_imputed <- a_imputed %>%
     # Add study ID as first column
     study_id = study_id,
 
-    # Phthalate metabolites (adjusted by sgratio_pht)
+    # Phthalate metabolites (adjusted by sgratio_pht) - 12 variables
+    MBP = mBP * sgratio_pht,
+    MiBP = miBP * sgratio_pht,
+    MCNP = mCNP * sgratio_pht,
+    MCOP = mCOP * sgratio_pht,
+    MECPP = mECPP * sgratio_pht,
+    MEHHP = mEHHP * sgratio_pht,
+    MEHP = mEHP * sgratio_pht,
+    MEOHP = mEOHP * sgratio_pht,
+    MCPP = mCPP * sgratio_pht,
     MEP = mEP1 * sgratio_pht,
     MBzP = mBZP1 * sgratio_pht,
-    MCNP = mCNP * sgratio_pht,
-    MiBP = miBP * sgratio_pht,
-    MBP = mBP * sgratio_pht,
-    MCOP = mCOP * sgratio_pht,
-    MCPP = mCPP * sgratio_pht,
     sumDEHP = dehp * sgratio_pht,
 
-    # Phenols and parabens (adjusted by sgratio_bpa)
+    # Phenols and parabens (adjusted by sgratio_bpa) - 4 variables
     BPA = BPA * sgratio_bpa,
-    #BPS = BPS * sgratio_bpa,
-    #BPF = BPF * sgratio_bpa,
-    #BP3 = BP_3 * sgratio_bpa,
     BP = B_PB * sgratio_bpa,
     MP = M_PB * sgratio_bpa,
     PP = P_PB * sgratio_bpa,
-    #TCS = TCS * sgratio_bpa
+
+    # Excluded due to >40% missing:
+    #BPS = BPS * sgratio_bpa,     # 64.9% missing
+    #BPF = BPF * sgratio_bpa,     # 85.9% missing
+    #BP3 = BP_3 * sgratio_bpa,    # 41.0% missing
+    #TCS = TCS * sgratio_bpa      # 41.0% missing
+
+    # OPFR metabolites excluded - sgratio_opfr has 74.7% missing:
+    #BDCIPP_sg = BDCIPP * sgratio_opfr  # 78.5% missing
+    #DPHP_sg = DPHP * sgratio_opfr      # 76.6% missing
+    #ipPPP_sg = ipPPP * sgratio_opfr    # 78.7% missing
   ) %>%
   relocate(study_id, .before = 1)  # Ensure study_id is first column
 
@@ -314,12 +335,14 @@ head(a_imputed)
 
 # 8. Save imputed dataset
 imputed_data <- tibble(left_join(a_imputed, imputation_indicators, by = "study_id")) %>% 
-  mutate(DOR = as.numeric(sartnew2 == "DOR"), 
-         across(c(smokstat, races, educ1), as.factor))
+  mutate(DOR = as.factor(as.numeric(sartnew2 == "DOR")), 
+         across(c(smokstat, races, educ1), as.factor)) %>% 
+  select(-B_PB, -M_PB, -P_PB, -sartnew2)
 
 head(imputed_data)
 
-saveRDS(imputed_data, file = here("data", "imputed_EARTH.rds"))
+save(imputed_data, 
+     file = here("data", "imputed_EARTH.Rdata"))
 
 # 9. Summary of imputation
 cat("\n=== Imputation Summary ===\n")

@@ -38,19 +38,18 @@ afc_clean_notrunc$age_bin <- as.numeric(afc_clean_notrunc[,"age"] >= 35)
 names(afc_clean_notrunc)
 
 ggplot(afc_clean_notrunc) +
-  geom_point(aes(x = age, y = AFC_t)) +
-  geom_smooth(aes(x = age, y = AFC_t))
+  geom_point(aes(x = age, y = AFCt)) +
+  geom_smooth(aes(x = age, y = AFCt))
 
 ggsave(filename = here("figures", "main_scatterplot.png"), dpi = 300)
-
 
 descriptives_table1 <- afc_clean_notrunc %>% 
   group_by(as.numeric(age>=35)) %>% 
   summarize(mean_bmi = mean(bmi),
-            mean_gravid = mean(gravid),
-            mean_IUI = mean(previousIUI),
-            mean_IVF = mean(previousIVF),
-            mean_AFC = mean(AFC_t))
+            mean_gravid = mean(as.numeric(gravid)-1),
+            mean_IUI = mean(as.numeric(previousIUI)-1),
+            mean_IVF = mean(as.numeric(previousIVF)-1),
+            mean_AFC = mean(AFCt))
 
 saveRDS(descriptives_table1, here("output", "descriptives_table1.rds"))
 
@@ -61,7 +60,7 @@ table(exposure)
 mean(exposure)
 
 # create outcome variable
-outcome <- as.numeric(unlist(afc_clean_notrunc[,"AFC_t"]))
+outcome <- as.numeric(unlist(afc_clean_notrunc[,"AFCt"]))
 
 hist(outcome)
 table(outcome)
@@ -70,34 +69,36 @@ length(exposure)
 length(outcome)
 
 # identify and transform categorical
-categorical_vars <- afc_clean_notrunc[,c("white", "educ1", "previousIVF", "gravid", "previousIUI", "eversmok")] 
-
-categorical_vars <- categorical_vars %>% 
-  mutate(educ1 = factor(educ1))
+categorical_vars <- afc_clean_notrunc %>% select(where(is.factor), -DOR) 
 
 skim(categorical_vars)
 
-env_vars <- c("mEP1_sg", "mBZP1_sg", "mCNP_sg","miBP_sg",
-              "mBP_sg","BP_3_sg", "M_PB_sg", "dehp_sg", 
-              "BPA_sg", "mCOP_sg", "mCPP_sg", "B_PB_sg", "P_PB_sg", "Hg")
+# 17 EDC variables with <40% missing (16 SG-adjusted + 1 Hg)
+env_vars <- c("MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
+              "MCPP", "MEP", "MBzP", "sumDEHP",
+              "BPA", "BP", "MP", "PP",
+              "Hg")
 
 # identify and transform continuous
-continuous_vars <- afc_clean_notrunc[,c("bmi", "year",
-                                      "mEP1_sg", "mBZP1_sg", "mCNP_sg","miBP_sg",
-                                      "mBP_sg","BP_3_sg", "M_PB_sg", "dehp_sg", 
-                                      "BPA_sg", "mCOP_sg", "mCPP_sg", "B_PB_sg", "P_PB_sg", "Hg")]
-
+continuous_vars <- afc_clean_notrunc %>% 
+  select(where(is.numeric), -starts_with("imp_"), -age_bin, -AFCt, -age, -DOR) 
 continuous_vars
 
-new_afc <- data.frame(outcome, exposure, categorical_vars, continuous_vars)
+# identify imputation flags
+flag_vars <- afc_clean_notrunc %>% select(starts_with("imp_")) 
+flag_vars
+
+new_afc <- data.frame(outcome, exposure, categorical_vars, continuous_vars, flag_vars)
 
 skim(new_afc)
 
 # relevant covariate set
-covariates <- c(names(continuous_vars), names(categorical_vars))
+covariates <- c(names(continuous_vars), names(categorical_vars), names(flag_vars))
 
 # use covariate set to construct design matrix that doesn't include exposure
-covariates_matrix <- data.frame(model.matrix(formula(paste0("~", paste0(covariates, collapse="+"))), data=new_afc)[,-1])
+covariates_matrix <- data.frame(model.matrix(formula(paste0("~", 
+                                                            paste0(covariates, collapse="+"))), 
+                                             data=new_afc)[,-1])
 
 # use covariate set to construct design matrix that includes exposure
 covariates_matrix_w <- data.frame(covariates_matrix, age_bin = exposure)
