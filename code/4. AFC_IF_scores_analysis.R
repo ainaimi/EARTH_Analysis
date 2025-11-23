@@ -92,19 +92,17 @@ table2 <- rbind(table2_unconditional, table2_conditional)
 
 saveRDS(table2, file = here("output", "linear_projection_output.rds"))
 
-# Create forest plot of DR learner test statistics
-label_data <- table2 %>%
-  filter(abs(dr_statistic) > 1.28 | term %in% c("BP", "Hg"))
+# Create plot of DR learner test statistics
 
 ggplot(table2, aes(x = dr_statistic, y = reorder(term, dr_statistic))) +
   geom_vline(xintercept = 0, color = "gray", linetype = "solid") +
-  geom_vline(xintercept = c(-1.96, 1.96), color = "gray70", linetype = "dashed") +
+  geom_vline(xintercept = c(-1.96, 1.96), color = "gray70", linetype = "dotted") +
   geom_vline(xintercept = c(-1.645, 1.645), color = "gray50", linetype = "dotted") +
   geom_vline(xintercept = c(-1.28, 1.28), color = "gray30", linetype = "dotted") +
   geom_point(aes(shape = Type), size = 3) +
   scale_shape_manual(values = c(16, 1)) +
   xlim(-3, 3) +
-  xlab("Test Statistic, DR Learner") +
+  xlab("Test Statistic, Linear Projection") +
   ylab("Environmental Chemical") +
   theme_classic(base_size = 16) +
   theme(legend.position = c(0.95, 0.05),
@@ -185,9 +183,9 @@ plot_list <- lapply(seq_along(var_names), function(i) {
 })
 
 # Combine plots
-grid.arrange(grobs = plot_list, ncol = ncol_grid)
+plot_grid <- grid.arrange(grobs = plot_list, ncol = ncol_grid)
 
-ggsave(filename = here("figures", "cate_functions_full_linear.png"),
+ggsave(plot = plot_grid, filename = here("figures", "cate_functions_full_linear.png"),
        width = 20, height = 20, units = "cm", dpi = 300)
 
 ## SuperLearner-based CATE function estimation
@@ -259,7 +257,7 @@ create_cate_plot_sl <- function(var_name, data, x_label, ate_estimates, show_yla
     geom_rug(data = plot_data, aes(x = log_var), sides = "b", length = unit(2, "mm")) +
     geom_hline(yintercept = ate_estimates, color = "gray", linetype = "dashed") +
     xlab(x_label) + ylim(-8, -2) +
-    theme_classic(base_size = 10)
+    theme_classic(base_size = 20)
 
   # Conditionally add y-axis label
   if (show_ylab) {
@@ -287,31 +285,7 @@ plot_list <- lapply(seq_along(var_names), function(i) {
 })
 
 # Combine plots
-grid.arrange(grobs = plot_list, ncol = ncol_grid)
+plot_grid <- grid.arrange(grobs = plot_list, ncol = ncol_grid)
 
-ggsave(filename = here("figures", "cate_functions_paper.png"),
-       width = 20, height = 20, units = "cm", dpi = 300)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+ggsave(plot = plot_grid, filename = here("figures", "cate_functions_paper.png"),
+       width = 20, height = 16, units = "cm", dpi = 300)

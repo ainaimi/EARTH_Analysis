@@ -1,91 +1,75 @@
 # EARTH Treatment Heterogeneity Analysis
 
-This repository contains the complete analysis pipeline for examining whether 
-and how environmental endocrine disrupting chemicals modify the well established 
-association between age and antral follicle count (a marker of fertility) in 775 women 
+This repository contains the complete analysis pipeline for examining whether
+and how environmental endocrine disrupting chemicals modify the well established
+association between age and antral follicle count (a marker of fertility) in 775 women
 aged 21 to 46 years.
- 
-The analysis uses data from the EARTH (Environment and Reproductive Health) Study and 
-employs two "learners" commonly used to estimate conditional average treatment effects.
-Note, however, that we use these learners to estimate associations.
+
+The analysis uses data from the EARTH (Environment and Reproductive Health) Study and
+employs the doubly robust (DR) learner, a method to estimate conditional
+average treatment effects. We use this learner to estimate how the association between age and antral follicle count changes as a function of environmental endocrine disrupting chemicals.
 
 ## Analysis Pipeline
 
-The analysis consists of four sequential scripts that should be run in order:
+The analysis consists of five sequential scripts that should be run in order:
+
+0. **`0. AFC_data_gen.R`** - Data generation and random forest imputation
+   - Loads raw EARTH study data
+   - Analyzes missing data patterns
+   - Performs random forest imputation for variables with <40% missingness
+   - Excludes variables with >40% missingness (BPS, BPF, BP3, TCS, OPFR metabolites)
+   - Generates imputation diagnostics and comparison plots
 
 1. **`1. AFC_data_man.R`** - Data management and preprocessing
-   - Loads and cleans raw EARTH study data
-   - Handles missing data
-   - Creates analysis-ready datasets
+   - Loads imputed data from Step 0
+   - Creates cleaned datasets with and without truncation of extreme values
+   - Prepares analysis-ready datasets
 
 2. **`2. AFC_chem_analysis.R`** - Chemical modifier exploration and outlier detection
    - Examines distributions of environmental modifiers
-   - Compares trimmed vs. untrimmed modifier data
+   - Compares truncated vs. non-truncated modifier data
    - Generates descriptive statistics
    - Performs multivariate outlier detection (Mahalanobis, PCA, LOF, Cook's D)
 
 3. **`3. AFC_IF_scores_gen.R`** - Influence function score generation
-   - Implements causal forest models using GRF
-   - Implements the DR learner models using cross validated SuperLearner
-   - Generates influence function (IF) scores for statistical inference for both
+   - Implements the DR learner models using cross-validated SuperLearner
+   - Generates influence function (IF) scores for statistical inference
+   - Produces variable importance measures and propensity score diagnostics
 
 4. **`4. AFC_IF_scores_analysis.R`** - Heterogeneity analysis and visualization
-   - Analyzes estimated treatment effect heterogeneity
-   - Conducts subgroup analyses
+   - Analyzes estimated treatment effect heterogeneity using best linear projection
    - Performs hypothesis tests for effect modification
-   - Creates plots of modified associations and generates manuscript figures
+   - Creates CATE function plots (linear and SuperLearner-based)
+   - Generates manuscript figures
+
+5. **Quarto Report** - `EARTH_Analysis_Report.qmd`
+   - Compiles all results into a comprehensive HTML report
+   - Includes missing data analysis, descriptive statistics, model diagnostics, and CATE results
 
 ## Requirements
 
 ### R Version
 - R >= 4.0.0 recommended
 
-### Required R Packages
-The analysis uses `pacman` for package management and requires:
-
-**Core packages:**
-- `tidyverse` - Data manipulation and visualization
-- `here` - Path management
-
-**Causal inference:**
-- `grf` - Generalized random forests for CATE estimation
-- `SuperLearner` - Ensemble machine learning
-
-**Statistical analysis:**
-- `lmtest`, `sandwich` - Robust standard errors
-- `pROC` - ROC curve analysis
-- `broom` - Model tidying
-
-**Machine learning:**
-- `ranger` - Random forest implementation
-- `xgboost` - Gradient boosting
-- `polspline` - Polynomial splines
-
-**Visualization:**
-- `ggplot2` (via tidyverse)
-- `gridExtra` - Multi-panel plots
-- `scales` - Plot scaling
-- `vip` - Variable importance plots
-
-**Data handling:**
-- `rio` - Import/export
-- `haven` - SAS/Stata file reading
-- `skimr` - Data summaries
-
-**Other:**
-- `xtable` - Table formatting
-- `parallel` - Parallel computing
-
 ## Project Structure
 
 ```
 EARTH_Analysis/
 ├── code/               # Analysis scripts (run in numbered order)
+│   ├── 0. AFC_data_gen.R
+│   ├── 1. AFC_data_man.R
+│   ├── 2. AFC_chem_analysis.R
+│   ├── 3. AFC_IF_scores_gen.R
+│   ├── 4. AFC_IF_scores_analysis.R
+│   ├── EARTH_Analysis_Report.qmd
+│   └── .gitignore     # Ignores Quarto cache and temp files
 ├── data/              # Raw and processed data files (not tracked in git)
 ├── figures/           # Generated figures (not tracked in git)
+├── output/            # Analysis results as .rds files (not tracked in git)
 ├── manuscript/        # Manuscript drafts (not tracked in git)
 ├── sandbox/           # Exploratory analyses (not tracked in git)
 ├── misc/              # Miscellaneous files (not tracked in git)
+├── Makefile           # Automated pipeline orchestration
 └── README.md          # This file
 ```
 
@@ -100,53 +84,25 @@ EARTH_Analysis/
 
 **Option 1: Using Make (Recommended)**
 ```bash
-# Run entire pipeline with one command
+# Run entire pipeline with one command (includes all steps 0-4 and report generation)
 make all
 
 # Or run individual steps
+make step0  # Data generation and imputation
 make step1  # Data management
 make step2  # Chemical analysis
 make step3  # IF score generation
 make step4  # Heterogeneity analysis
+make report # Generate HTML report only
 
-# See all available commands
-make help
-```
-
-**Option 2: Run scripts manually in R**
-```r
-# Run from R console with project open
-source(here::here("code", "1. AFC_data_man.R"))
-source(here::here("code", "2. AFC_chem_analysis.R"))
-source(here::here("code", "3. AFC_IF_scores_gen.R"))
-source(here::here("code", "4. AFC_IF_scores_analysis.R"))
-```
-
-### Output
-- Cleaned datasets: `data/` directory
-- Figures: `figures/` directory
-- Intermediate model objects: `misc/` directory (large .RDS files)
-
-## Data
-
-This analysis uses data from the EARTH Study. Data files are not included in 
-this repository due to privacy and data use agreements. Authorized users should 
-place data files in the `data/` directory.
-
-## Reproducibility
-
-- All file paths use the `here` package for platform-independent path management
-- Random seed setting is implemented in scripts for reproducibility
-- Session info is captured in analysis outputs
+# Clean outputs
+make clean        # Remove intermediate marker files
+make clean-report # Remove report only
+make clean-all    # Remove ALL generated outputs (use with caution!)
 
 ## Citation
 
 coming soon.
-
-## Acknowledgments
-
-This work was supported by [funding sources]. We thank the EARTH Study participants 
-and staff for their contributions to this research.
 
 ## License
 
