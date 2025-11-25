@@ -287,7 +287,7 @@ a_imputed <- a_imputed %>%
     MEP = mEP1 * sgratio_pht,
     MBzP = mBZP1 * sgratio_pht,
     sumDEHP = dehp * sgratio_pht,
-
+    
     # Phenols and parabens (adjusted by sgratio_bpa) - 4 variables
     BPA = BPA * sgratio_bpa,
     BP = B_PB * sgratio_bpa,

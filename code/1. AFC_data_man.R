@@ -27,7 +27,7 @@ the_data <- c("AFCt", "year", "month", "DOR","eversmok",
 
               # 17 EDC variables (16 SG-adjusted + 1 Hg)
               "MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
-              "MCPP", "MEP", "MBzP", "sumDEHP",
+              "MCPP", "MEP", "MBzP", #"sumDEHP",
               "BPA", "BP", "MP", "PP",
               "Hg")
 
@@ -38,7 +38,7 @@ impute_flags <- c("imp_sgratio_pht", "imp_smokstat", "imp_races", "imp_bmi", "im
 
 # 17 EDC variables with <40% missing (16 SG-adjusted + 1 Hg)
 env_vars <- c("MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
-              "MCPP", "MEP", "MBzP", "sumDEHP",
+              "MCPP", "MEP", "MBzP", #"sumDEHP",
               "BPA", "BP", "MP", "PP",
               "Hg")
 
@@ -49,7 +49,7 @@ saveRDS(skim_results, here("output", "skim_results.rds"))
 summary_stats <- afc_clean %>%
   summarise(across(c(AFCt, year, month, age,
                      MBP, MiBP, MCNP, MCOP, MECPP, MEHHP, MEHP, MEOHP,
-                     MCPP, MEP, MBzP, sumDEHP,
+                     MCPP, MEP, MBzP, #sumDEHP,
                      BPA, BP, MP, PP, Hg), .fns = 
                            list(min = min,
                                 median = median,

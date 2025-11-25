@@ -40,6 +40,7 @@ mean(exposure)
 
 # create outcome variable
 outcome <- as.numeric(unlist(afc_clean_notrunc[,"AFCt"]))
+hist(outcome)
 
 # identify and transform categorical
 categorical_vars <- afc_clean_notrunc %>% select(where(is.factor), -DOR)
@@ -47,7 +48,7 @@ categorical_vars <- afc_clean_notrunc %>% select(where(is.factor), -DOR)
 # 17 EDC variables with <40% missing (16 SG-adjusted + 1 Hg)
 # (defined in file 1. AFC_data_man.R)
 env_vars <- c("MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
-              "MCPP", "MEP", "MBzP", "sumDEHP",
+              "MCPP", "MEP", "MBzP", #"sumDEHP",
               "BPA", "BP", "MP", "PP",
               "Hg")
 

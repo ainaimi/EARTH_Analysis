@@ -26,7 +26,7 @@ load(here("data", "afc_clean_notrunc.Rdata"))
 # 17 EDC variables with <40% missing (16 SG-adjusted + 1 Hg)
 # (defined in file 1. AFC_data_man.R)
 env_vars <- c("MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
-              "MCPP", "MEP", "MBzP", "sumDEHP",
+              "MCPP", "MEP", "MBzP", #"sumDEHP",
               "BPA", "BP", "MP", "PP",
               "Hg")
 

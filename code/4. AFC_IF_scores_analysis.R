@@ -28,7 +28,7 @@ names(if_data) <- c("dr_scores")
 # 17 EDC variables with <40% missing (16 SG-adjusted + 1 Hg)
 # (defined in file 1. AFC_data_man.R)
 env_vars <- c("MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
-              "MCPP", "MEP", "MBzP", "sumDEHP",
+              "MCPP", "MEP", "MBzP", #"sumDEHP",
               "BPA", "BP", "MP", "PP",
               "Hg")
 
@@ -128,7 +128,7 @@ x_labels <- c(
   "MCPP" = "log(MCPP), μg/L",
   "MEP" = "log(MEP), μg/L",
   "MBzP" = "log(MBzP), μg/L",
-  "sumDEHP" = "log(∑DEHP), μg/L",
+  #"sumDEHP" = "log(∑DEHP), μg/L",
   "BPA" = "log(BPA), μg/L",
   "BP" = "log(BP), μg/L",
   "MP" = "log(MP), μg/L",
@@ -211,16 +211,13 @@ create_cate_plot_sl <- function(var_name, data, x_label, ate_estimates, show_yla
   X_train <- data.frame(x = x_sorted)
 
   # Select SuperLearner library based on chemical
-  if (var_name == "MCOP") {
+  if (var_name %in% c("MCOP", "MEHP")) {
     SL.library <- loess_learner$names
     cat("\nUsing LOESS learner for", var_name, "\n")
-  } else if (var_name == "MiBP") {
+  } else {
     SL.library <- gam_learner$names
     cat("\nUsing GAM learner for", var_name, "\n")
-  } else {
-    SL.library <- loess_learner$names  # Default to loess
-    cat("\nUsing default LOESS learner for", var_name, "\n")
-  }
+  } 
 
   num.folds <- 10
   folds <- sort(seq(nrow(plot_data)) %% num.folds) + 1
@@ -275,8 +272,8 @@ create_cate_plot_sl <- function(var_name, data, x_label, ate_estimates, show_yla
 }
 
 # Create plots for all 17 EDCs using SuperLearner
-var_names <- c("MCOP","MiBP")
-ncol_grid <- 2
+var_names <- c("MCOP","MiBP", "MEHP")
+ncol_grid <- 3
 plot_list <- lapply(seq_along(var_names), function(i) {
   var <- var_names[i]
   show_ylab <- (i - 1) %% ncol_grid == 0
