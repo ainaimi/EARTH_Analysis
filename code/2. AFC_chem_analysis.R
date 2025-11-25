@@ -94,6 +94,21 @@ print(p_trunc)
 
 ggsave(here("figures", "env_vars_trunc.png"), units = "cm", width = 16, height = 16, dpi = 300)
 
+plot_vars <- c("AFCt")
+
+p_notrunc <- plot_distributions(
+  data = afc_clean_notrunc,
+  variables = plot_vars,
+  ncol = 1,
+  title = "Distribution of AFC"
+)
+print(p_notrunc)
+
+ggsave(here("figures", "AFC_histogram.png"), units = "cm", width = 16, height = 16, dpi = 300) 
+
+
+
+
 ## multivariate outlier detection
 # Prepare multivariate data (outcome + all environmental variables)
 multivar_data <- afc_clean_notrunc %>%
