@@ -191,13 +191,14 @@ ggsave(plot = plot_grid, filename = here("figures", "cate_functions_full_linear.
 ## SuperLearner-based CATE function estimation
 # Create custom learner wrapper for EARTH
 loess_learner <- create.Learner("SL.loess", tune = list(span = seq(1,2,by=.05)))
-gam_learner <- create.Learner("SL.gam", tune = list(deg.gam = seq(1,3)))
+gam_learner <- create.Learner("SL.gam", tune = list(deg.gam = seq(1,3, by=.5)))
 set.seed(123)
 # Function with SuperLearner that uses different learners based on chemical
 create_cate_plot_sl <- function(var_name, data, x_label, ate_estimates, show_ylab = TRUE) {
   # Select and clean data for this variable
   plot_data <- data %>%
     select(dr_scores, all_of(var_name)) %>%
+    {if(var_name == "MEHP") filter(., MEHP < quantile(MEHP, prob = 0.99)) else .} %>%
     mutate(across(all_of(var_name), ~log(. + 0.01))) %>%
     drop_na()  # Remove any NA values
 
@@ -211,14 +212,14 @@ create_cate_plot_sl <- function(var_name, data, x_label, ate_estimates, show_yla
   X_train <- data.frame(x = x_sorted)
 
   # Select SuperLearner library based on chemical
-  if (var_name %in% c("MCOP", "MEHP")) {
+  if (var_name %in% c("MCOP")) {
     SL.library <- loess_learner$names
     cat("\nUsing LOESS learner for", var_name, "\n")
   } else {
     SL.library <- gam_learner$names
     cat("\nUsing GAM learner for", var_name, "\n")
-  } 
-
+  }
+  
   num.folds <- 10
   folds <- sort(seq(nrow(plot_data)) %% num.folds) + 1
   fold_dat <- tibble(id = 1:nrow(plot_data), folds)
@@ -285,4 +286,4 @@ plot_list <- lapply(seq_along(var_names), function(i) {
 plot_grid <- grid.arrange(grobs = plot_list, ncol = ncol_grid)
 
 ggsave(plot = plot_grid, filename = here("figures", "cate_functions_paper.png"),
-       width = 20, height = 16, units = "cm", dpi = 300)
+       width = 30, height = 16, units = "cm", dpi = 300)

@@ -3,6 +3,9 @@ pacman::p_load(
   here,
   tidyverse,
   parallel,
+  future,
+  future.apply,
+  progressr,
   SuperLearner,
   broom,
   lmtest,
@@ -116,8 +119,25 @@ sl_lib <- list("SL.mean", "SL.glm",
                "SL.glmnet_4", "SL.glmnet_5", "SL.glmnet_6",
                c("SL.glm.interaction", "screen.corP"))
 
-# Set parallel processing
-options(mc.cores = detectCores() - 2)
+# ==============================================================================
+# PARALLELIZATION CONFIGURATION
+# ==============================================================================
+# Strategy: Parallelize at SCENARIO level, not within CV.SuperLearner
+# This prevents nested parallelization which causes memory crashes
+#
+# Adjust n_parallel_scenarios based on your system:
+#   - 2-3 scenarios: Safe for 16-24GB RAM (RECOMMENDED START HERE)
+#   - 4 scenarios: Requires 32GB+ RAM
+#   - 8 scenarios: Requires 64GB+ RAM
+# ==============================================================================
+
+n_parallel_scenarios <- 8  # ADJUST THIS BASED ON YOUR RAM
+
+# Set up future plan for scenario-level parallelization
+plan(multisession, workers = n_parallel_scenarios)
+
+# Disable parallelization within CV.SuperLearner to prevent nested parallel
+options(mc.cores = 1)
 
 # ==============================================================================
 # AIPW SCORING FUNCTION
@@ -176,7 +196,6 @@ compute_aipw_scores <- function(dat) {
     SL.library = sl_lib,
     cvControl = list(V = num.folds, validRows = fold_index),
     control = list(saveCVFitLibrary = TRUE),
-    parallel = "multicore",
     verbose = FALSE
   )
 
@@ -190,7 +209,6 @@ compute_aipw_scores <- function(dat) {
     SL.library = sl_lib,
     cvControl = list(V = num.folds, validRows = fold_index),
     control = list(saveCVFitLibrary = FALSE),
-    parallel = "multicore",
     verbose = FALSE
   )
 
@@ -268,7 +286,7 @@ compute_linear_projection <- function(aipw_scores, edc_data) {
 }
 
 # ==============================================================================
-# MAIN SENSITIVITY ANALYSIS LOOP
+# MAIN SENSITIVITY ANALYSIS LOOP (PARALLELIZED)
 # ==============================================================================
 
 cat("\n=== Starting Sensitivity Analysis ===\n")
@@ -276,6 +294,8 @@ cat("Total combinations: 16\n")
 cat("  Outliers: 2 options (in, out)\n")
 cat("  EDC trimming: 4 options (90th, 92.5th, 95th, 97.5th percentiles)\n")
 cat("  AFC trimming: 2 options (yes, no)\n\n")
+cat("Running", n_parallel_scenarios, "scenarios in parallel\n")
+cat("Each scenario runs CV.SuperLearner sequentially to avoid memory issues\n\n")
 
 # Define scenario specifications
 outlier_options <- c(FALSE, TRUE)
@@ -292,21 +312,22 @@ scenario_grid <- expand.grid(
 # Add scenario IDs
 scenario_grid$scenario_id <- 1:nrow(scenario_grid)
 
-# Results storage
-all_results <- list()
-
-# Loop through all scenarios
-for (i in 1:nrow(scenario_grid)) {
+# Function to process a single scenario
+process_scenario <- function(i) {
 
   scenario <- scenario_grid[i, ]
 
-  cat("\n========================================\n")
-  cat("Scenario", scenario$scenario_id, "of", nrow(scenario_grid), "\n")
-  cat("----------------------------------------\n")
-  cat("  Outliers removed:", scenario$outliers_removed, "\n")
-  cat("  EDC percentile:", scenario$edc_percentile, "\n")
-  cat("  AFC trimmed:", scenario$afc_trimmed, "\n")
-  cat("----------------------------------------\n")
+  # Create log message
+  msg <- paste0(
+    "\n========================================\n",
+    "Scenario ", scenario$scenario_id, " of ", nrow(scenario_grid), "\n",
+    "----------------------------------------\n",
+    "  Outliers removed: ", scenario$outliers_removed, "\n",
+    "  EDC percentile: ", scenario$edc_percentile, "\n",
+    "  AFC trimmed: ", scenario$afc_trimmed, "\n",
+    "----------------------------------------\n"
+  )
+  cat(msg)
 
   # Prepare data for this scenario
   cat("  Preparing data...\n")
@@ -335,11 +356,52 @@ for (i in 1:nrow(scenario_grid)) {
       n_obs = nrow(dat)
     )
 
-  # Store results
-  all_results[[i]] <- lin_proj_results
-
   cat("  Completed!\n")
+
+  return(lin_proj_results)
 }
+
+# Run scenarios in parallel
+cat("Starting parallel execution...\n")
+
+# Explicitly specify globals to export to workers
+# This ensures all custom learners and necessary objects are available
+all_results <- future_lapply(
+  1:nrow(scenario_grid),
+  process_scenario,
+  future.seed = TRUE,
+  future.globals = list(
+    scenario_grid = scenario_grid,
+    afc_base = afc_base,
+    prepare_data = prepare_data,
+    compute_aipw_scores = compute_aipw_scores,
+    compute_linear_projection = compute_linear_projection,
+    env_vars = env_vars,
+    the_data = the_data,
+    impute_flags = impute_flags,
+    outlier_rows = outlier_rows,
+    sl_lib = sl_lib,
+    # Export the custom learner functions created by create.Learner
+    SL.ranger_1 = get("SL.ranger_1", envir = .GlobalEnv),
+    SL.ranger_2 = get("SL.ranger_2", envir = .GlobalEnv),
+    SL.ranger_3 = get("SL.ranger_3", envir = .GlobalEnv),
+    SL.ranger_4 = get("SL.ranger_4", envir = .GlobalEnv),
+    SL.ranger_5 = get("SL.ranger_5", envir = .GlobalEnv),
+    SL.ranger_6 = get("SL.ranger_6", envir = .GlobalEnv),
+    SL.xgboost_1 = get("SL.xgboost_1", envir = .GlobalEnv),
+    SL.xgboost_2 = get("SL.xgboost_2", envir = .GlobalEnv),
+    SL.xgboost_3 = get("SL.xgboost_3", envir = .GlobalEnv),
+    SL.xgboost_4 = get("SL.xgboost_4", envir = .GlobalEnv),
+    SL.glmnet_1 = get("SL.glmnet_1", envir = .GlobalEnv),
+    SL.glmnet_2 = get("SL.glmnet_2", envir = .GlobalEnv),
+    SL.glmnet_3 = get("SL.glmnet_3", envir = .GlobalEnv),
+    SL.glmnet_4 = get("SL.glmnet_4", envir = .GlobalEnv),
+    SL.glmnet_5 = get("SL.glmnet_5", envir = .GlobalEnv),
+    SL.glmnet_6 = get("SL.glmnet_6", envir = .GlobalEnv)
+  ),
+  future.packages = c("SuperLearner", "tidyverse", "broom", "lmtest",
+                      "sandwich", "ranger", "xgboost")
+)
 
 cat("\n=== Sensitivity Analysis Complete ===\n\n")
 
@@ -374,78 +436,42 @@ plot_data <- sensitivity_results %>%
     )
   )
 
-# Create plot with facets for unconditional vs conditional
-p <- ggplot(plot_data, aes(x = statistic, y = reorder(term, statistic))) +
-  # Reference lines
-  geom_vline(xintercept = 0, color = "gray", linewidth = 0.8) +
+
+save(plot_data, 
+     file = here("data", "sensitivity_data.Rdata"))
+
+table_data <- readRDS(here("output", "linear_projection_output.rds"))
+
+# Create plot of DR learner test statistics
+ggplot() +
+  geom_vline(xintercept = 0, color = "gray", linetype = "solid") +
   geom_vline(xintercept = c(-1.96, 1.96), color = "gray70", linetype = "dotted") +
   geom_vline(xintercept = c(-1.645, 1.645), color = "gray50", linetype = "dotted") +
   geom_vline(xintercept = c(-1.28, 1.28), color = "gray30", linetype = "dotted") +
-  # Points colored by scenario components
-  geom_point(aes(color = interaction(outlier_label, edc_label, afc_label),
-                 shape = Type),
-             size = 1.5, alpha = 0.6) +
-  # Facet by model type
-  facet_wrap(~ Type, ncol = 2) +
-  # Scales and labels
-  xlim(-4, 4) +
-  xlab("Test Statistic (Best Linear Projection)") +
+  geom_point(data = plot_data, 
+             aes(x = statistic, y = reorder(term, statistic), shape = Type), 
+             size = 3, color = "gray", alpha = 0.5) +
+  geom_point(data = table_data,
+             aes(x = dr_statistic, y = reorder(term, dr_statistic), shape = Type), 
+             size = 3, color = "black") +
+  scale_shape_manual(values = c(16, 3)) +
+  xlim(-3, 3) +
+  xlab("Test Statistic, Linear Projection") +
   ylab("Environmental Chemical") +
-  labs(color = "Scenario", shape = "Model Type") +
-  theme_classic(base_size = 12) +
-  theme(
-    legend.position = "bottom",
-    legend.box = "vertical",
-    strip.background = element_rect(fill = "white", color = "black"),
-    strip.text = element_text(face = "bold", size = 12)
-  ) +
-  guides(
-    color = guide_legend(nrow = 4, title = "Outliers | EDC Trim | AFC Trim"),
-    shape = guide_legend(title = "Model Type")
-  )
+  theme_classic(base_size = 16) +
+  theme(legend.position = c(0.95, 0.05),
+        legend.justification = c(1, 0))
 
-# Save plot
-ggsave(
-  plot = p,
-  filename = here("figures", "test_scatter.png"),
-  width = 30,
-  height = 25,
-  units = "cm",
-  dpi = 300
-)
-
-cat("Visualization saved to: figures/test_scatter.png\n")
-
-# ==============================================================================
-# CREATE SUMMARY TABLE
-# ==============================================================================
-
-cat("\nCreating summary statistics...\n")
-
-# Count significant results by scenario
-summary_stats <- sensitivity_results %>%
-  group_by(scenario_id, outliers_removed, edc_percentile, afc_trimmed, Type) %>%
-  summarise(
-    n_obs = first(n_obs),
-    n_sig_10 = sum(abs(statistic) > 1.645),
-    n_sig_05 = sum(abs(statistic) > 1.96),
-    n_sig_01 = sum(abs(statistic) > 2.576),
-    mean_abs_stat = mean(abs(statistic)),
-    max_abs_stat = max(abs(statistic)),
-    .groups = "drop"
-  ) %>%
-  arrange(scenario_id, Type)
-
-# Save summary
-saveRDS(summary_stats, here("output", "sensitivity_summary_stats.rds"))
-
-cat("Summary statistics saved to: output/sensitivity_summary_stats.rds\n")
-
-# Print summary to console
-cat("\n=== Summary of Significant Results ===\n")
-print(summary_stats %>%
-        select(scenario_id, Type, n_sig_10, n_sig_05, n_sig_01) %>%
-        pivot_wider(names_from = Type,
-                   values_from = c(n_sig_10, n_sig_05, n_sig_01)))
+ggsave(filename = here("figures", "teststat_scatter_sensitivity.png"),
+       width = 16, height = 16, units = "cm", dpi = 300)
 
 cat("\n=== Analysis Complete ===\n")
+
+# ==============================================================================
+# CLEANUP AND MEMORY MANAGEMENT
+# ==============================================================================
+
+# Close parallel workers to free memory
+plan(sequential)
+
+cat("\nMemory cleanup complete. Parallel workers closed.\n")
