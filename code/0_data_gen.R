@@ -268,7 +268,7 @@ imputation_indicators <- a_ %>%
          -imp_gravid)            # identical to imp_educ1
 
 # 7. Create specific gravity-adjusted EDC variables and add study_id
-# These variable names match the rename() function in 4. AFC_IF_scores_analysis.R
+# These variable names match the rename() function in 4_IF_scores_analysis.R
 a_imputed <- a_imputed %>%
   mutate(
     # Add study ID as first column

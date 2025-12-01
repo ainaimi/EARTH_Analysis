@@ -26,7 +26,7 @@ if_data <- data.frame(if_data)
 names(if_data) <- c("dr_scores")
 
 # 17 EDC variables with <40% missing (16 SG-adjusted + 1 Hg)
-# (defined in file 1. AFC_data_man.R)
+# (defined in file 1_data_man.R)
 env_vars <- c("MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
               "MCPP", "MEP", "MBzP", #"sumDEHP",
               "BPA", "BP", "MP", "PP",
@@ -88,30 +88,43 @@ table2 <- rbind(table2_unconditional, table2_conditional)
 
 saveRDS(table2, file = here("output", "linear_projection_output.rds"))
 
-# Create plot of DR learner test statistics
+# Create plot of DR learner test statistics (unconditional)
 
-ggplot(table2, aes(x = statistic, y = reorder(term, statistic))) +
+ggplot(table2 %>% filter(Type == "unconditional"), aes(x = statistic, y = reorder(term, statistic))) +
   geom_vline(xintercept = 0, color = "gray", linetype = "solid") +
   geom_vline(xintercept = c(-1.96, 1.96), color = "gray70", linetype = "dotted") +
   geom_vline(xintercept = c(-1.645, 1.645), color = "gray50", linetype = "dotted") +
   geom_vline(xintercept = c(-1.28, 1.28), color = "gray30", linetype = "dotted") +
-  geom_point(aes(shape = Type), size = 3) +
-  scale_shape_manual(values = c(16, 1)) +
+  geom_point(size = 3) +
   xlim(-3, 3) +
   xlab("Test Statistic, Linear Projection") +
   ylab("Environmental Chemical") +
-  theme_classic(base_size = 16) +
-  theme(legend.position = c(0.95, 0.05),
-        legend.justification = c(1, 0))
+  theme_classic(base_size = 16)
 
-ggsave(filename = here("figures", "teststat_scatter.png"),
+ggsave(filename = here("figures", "teststat_scatter_unconditional.png"),
+       width = 16, height = 16, units = "cm", dpi = 300)
+
+# Create plot of DR learner test statistics (conditional)
+
+ggplot(table2 %>% filter(Type == "conditional"), aes(x = statistic, y = reorder(term, statistic))) +
+  geom_vline(xintercept = 0, color = "gray", linetype = "solid") +
+  geom_vline(xintercept = c(-1.96, 1.96), color = "gray70", linetype = "dotted") +
+  geom_vline(xintercept = c(-1.645, 1.645), color = "gray50", linetype = "dotted") +
+  geom_vline(xintercept = c(-1.28, 1.28), color = "gray30", linetype = "dotted") +
+  geom_point(size = 3) +
+  xlim(-3, 3) +
+  xlab("Test Statistic, Linear Projection") +
+  ylab("Environmental Chemical") +
+  theme_classic(base_size = 16)
+
+ggsave(filename = here("figures", "teststat_scatter_conditional.png"),
        width = 16, height = 16, units = "cm", dpi = 300)
 
 
 ## modifier plots for all variables
 var_names <- unique(table2$term)
 
-# Define x-axis labels for 17 environmental variables
+# Define x-axis labels for 16 environmental variables
 x_labels <- c(
   "MBP" = "log(MBP), μg/L",
   "MiBP" = "log(MiBP), μg/L",
@@ -194,7 +207,8 @@ create_cate_plot_sl <- function(var_name, data, x_label, ate_estimates, show_yla
   # Select and clean data for this variable
   plot_data <- data %>%
     select(dr_scores, all_of(var_name)) %>%
-    {if(var_name == "MEHP") filter(., MEHP < quantile(MEHP, prob = 0.99)) else .} %>%
+    {if(var_name == "MEHP") filter(., MEHP < quantile(MEHP, prob = 0.95)) else .} %>%
+    {if(var_name == "MiBP") filter(., MiBP > quantile(MiBP, prob = 0.05)) else .} %>%
     mutate(across(all_of(var_name), ~log(. + 0.01))) %>%
     drop_na()  # Remove any NA values
 
@@ -208,7 +222,7 @@ create_cate_plot_sl <- function(var_name, data, x_label, ate_estimates, show_yla
   X_train <- data.frame(x = x_sorted)
 
   # Select SuperLearner library based on chemical
-  if (var_name %in% c("MCOP")) {
+  if (var_name %in% c("MCOP", "MEHP", "PP", "MiBP")) {
     SL.library <- loess_learner$names
     cat("\nUsing LOESS learner for", var_name, "\n")
   } else {
@@ -269,8 +283,8 @@ create_cate_plot_sl <- function(var_name, data, x_label, ate_estimates, show_yla
 }
 
 # Create plots for all 17 EDCs using SuperLearner
-var_names <- c("MCOP","MiBP", "MEHP")
-ncol_grid <- 3
+var_names <- c("MCOP","MiBP", "MEHP", "PP")
+ncol_grid <- 4
 plot_list <- lapply(seq_along(var_names), function(i) {
   var <- var_names[i]
   show_ylab <- (i - 1) %% ncol_grid == 0
