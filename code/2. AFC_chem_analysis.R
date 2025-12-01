@@ -393,10 +393,9 @@ write_csv(outlier_results, here("misc", "outlier_analysis_results.csv"))
 cat("\n=== Results saved to misc/outlier_analysis_results.csv ===\n")
 
 # Display top consensus outliers
-cat("\nTop 10 observations flagged by multiple methods:\n")
+cat("\nTop observations flagged by >= 3 methods:\n")
 outliers_id <- outlier_results %>%
-        filter(n_flags >= 2) %>%
-        head(10) %>%
+        filter(n_flags >= 3) %>%
         select(row_id, AFCt, age, n_flags, mahala_outlier, pc_outlier, lof_outlier, high_cooksd)
 
 

@@ -448,11 +448,11 @@ ggplot() +
   geom_vline(xintercept = c(-1.96, 1.96), color = "gray70", linetype = "dotted") +
   geom_vline(xintercept = c(-1.645, 1.645), color = "gray50", linetype = "dotted") +
   geom_vline(xintercept = c(-1.28, 1.28), color = "gray30", linetype = "dotted") +
-  geom_point(data = plot_data, 
-             aes(x = statistic, y = reorder(term, statistic), shape = Type), 
+  geom_point(data = plot_data,
+             aes(x = statistic, y = reorder(term, statistic), shape = Type),
              size = 3, color = "gray", alpha = 0.5) +
   geom_point(data = table_data,
-             aes(x = dr_statistic, y = reorder(term, dr_statistic), shape = Type), 
+             aes(x = statistic, y = reorder(term, statistic), shape = Type),
              size = 3, color = "black") +
   scale_shape_manual(values = c(16, 3)) +
   xlim(-3, 3) +

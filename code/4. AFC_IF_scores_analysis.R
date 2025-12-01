@@ -70,8 +70,6 @@ lin_proj <- data.frame(if_data, afc_clean_notrunc[,env_vars]) %>%
 model_dr_cond <- lm(dr_scores ~ ., data = lin_proj)
 dr_learner_conditional <- tidy(coeftest(model_dr_cond, vcov = vcovHC(model_dr_cond, type = "HC3"))) %>%
   filter(term != "(Intercept)")
-dr_learner_conditional <- dr_learner_conditional  %>%
-  rename_with(~ paste0("dr_", .), .cols = -term)
 # unconditional models
 dr_learner_unconditional <- map_dfr(env_vars, function(var) {
   formula_str <- paste("dr_scores ~", var)
@@ -79,8 +77,6 @@ dr_learner_unconditional <- map_dfr(env_vars, function(var) {
   tidy(coeftest(model, vcov = vcovHC(model, type = "HC3"))) %>%
     filter(term != "(Intercept)")  # Keep only the env_var coefficient
 })
-dr_learner_unconditional <- dr_learner_unconditional  %>%
-  rename_with(~ paste0("dr_", .), .cols = -term)
 
 table2_conditional <- dr_learner_conditional %>%
   mutate(Type = "conditional", .before=1)
@@ -94,7 +90,7 @@ saveRDS(table2, file = here("output", "linear_projection_output.rds"))
 
 # Create plot of DR learner test statistics
 
-ggplot(table2, aes(x = dr_statistic, y = reorder(term, dr_statistic))) +
+ggplot(table2, aes(x = statistic, y = reorder(term, statistic))) +
   geom_vline(xintercept = 0, color = "gray", linetype = "solid") +
   geom_vline(xintercept = c(-1.96, 1.96), color = "gray70", linetype = "dotted") +
   geom_vline(xintercept = c(-1.645, 1.645), color = "gray50", linetype = "dotted") +
