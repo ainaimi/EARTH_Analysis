@@ -221,7 +221,7 @@ This table presents the heterogeneity analysis by projecting the estimated CATEs
 
 ![Forest plot of heterogeneity test statistics across chemical exposures](../figures/teststat_scatter.png)
 
-This forest plot visualizes the test statistics from the best linear projection analysis, showing the strength of evidence for effect modification by each chemical exposure. Chemicals are ordered by test statistic magnitude, with reference lines indicating different significance thresholds. The plot allows quick identification of which chemicals show the strongest evidence for effect modification. 
+This forest plot visualizes the test statistics from the best linear projection analysis, showing the strength of evidence for effect modification by each chemical exposure. Solid dots represent unconditional models (one EDC at a time), while plus signs represent conditional models (all EDCs together). Chemicals are ordered by test statistic magnitude, with reference lines indicating different significance thresholds. The plot allows quick identification of which chemicals show the strongest evidence for effect modification. 
 
 ## CATE Functions by Chemical Exposure
 

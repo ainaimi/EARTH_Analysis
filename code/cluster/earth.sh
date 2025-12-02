@@ -1,13 +1,14 @@
-#!/bin/bash
-#SBATCH --job-name=afc_sens          # Job name
-#SBATCH --output=logs/sens_%A_%a.out # Standard output (%A=job ID, %a=array task ID)
-#SBATCH --error=logs/sens_%A_%a.err  # Standard error
-#SBATCH --partition=naimi            # My Partition on the cluster
-#SBATCH --array=1-6                  # Job array: 6 jobs for 24 scenarios
-#SBATCH --ntasks=1                   # Number of tasks (1 per job)
-#SBATCH --cpus-per-task=8            # CPUs for parallel processing within each scenario
-#SBATCH --mem=64G                    # Memory per job
-#SBATCH --time=6:00:00               # Max runtime (6 hours per job)
+#!/usr/bin/env bash
+#SBATCH --job-name=afc_sens
+#SBATCH --partition=naimi
+#SBATCH --array=1-6
+#SBATCH --ntasks=1
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=0
+#SBATCH --time=30-00:00:00
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=anaimi@emory.edu
 
 # ==============================================================================
 # SLURM Submission Script for AFC Sensitivity Analysis
@@ -36,7 +37,6 @@ echo "========================================="
 # Load required modules (adjust for your cluster)
 module purge
 module load R/4.4.0
-module load gcc/11.2.0  # Some R packages need a compiler
 
 # Set number of threads for OpenBLAS/MKL (if applicable)
 # export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
@@ -51,7 +51,7 @@ mkdir -p logs
 
 # Run the R script with the array task ID
 # This tells R which subset of scenarios to run
-Rscript --no-save --no-restore --verbose code/5_cluster.R $SLURM_ARRAY_TASK_ID
+Rscript --no-save --no-restore --verbose ./code/5_cluster.R $SLURM_ARRAY_TASK_ID > ./output/cluster_output_${SLURM_ARRAY_TASK_ID}.Rout 2>&1
 
 # Print completion information
 echo "========================================="

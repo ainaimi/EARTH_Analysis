@@ -1,5 +1,6 @@
 #!/usr/bin/env Rscript
-
+userLib <-  "~/R/R_LIBS_USER"
+.libPaths(userLib)
 # ==============================================================================
 # COMBINE SENSITIVITY ANALYSIS RESULTS FROM CLUSTER
 # ==============================================================================

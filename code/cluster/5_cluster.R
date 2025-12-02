@@ -1,5 +1,6 @@
 #!/usr/bin/env Rscript
-
+userLib <-  "~/R/R_LIBS_USER"
+.libPaths(userLib)
 # ==============================================================================
 # CLUSTER-OPTIMIZED SENSITIVITY ANALYSIS FOR AFC PROJECT
 # ==============================================================================
@@ -31,6 +32,60 @@ cat("===========================================================================
 # ==============================================================================
 
 cat("Loading required packages...\n")
+
+# Install missForest dependencies explicitly with better error reporting
+cat("Installing missForest dependencies...\n")
+
+# Install foreach (required by doRNG)
+if (!requireNamespace("foreach", quietly = TRUE)) {
+  cat("  Installing foreach...\n")
+  install.packages("foreach", repos = "https://cloud.r-project.org/", lib = userLib,
+                   dependencies = TRUE, type = "source")
+}
+
+# Install rngtools (required by doRNG)
+if (!requireNamespace("rngtools", quietly = TRUE)) {
+  cat("  Installing rngtools...\n")
+  install.packages("rngtools", repos = "https://cloud.r-project.org/", lib = userLib,
+                   dependencies = TRUE, type = "source")
+}
+
+# Install iterators (required by doRNG)
+if (!requireNamespace("iterators", quietly = TRUE)) {
+  cat("  Installing iterators...\n")
+  install.packages("iterators", repos = "https://cloud.r-project.org/", lib = userLib,
+                   dependencies = TRUE, type = "source")
+}
+
+# Install doRNG (required by missForest)
+if (!requireNamespace("doRNG", quietly = TRUE)) {
+  cat("  Installing doRNG...\n")
+  install.packages("doRNG", repos = "https://cloud.r-project.org/", lib = userLib,
+                   dependencies = TRUE, type = "source")
+}
+
+# Install randomForest (required by missForest)
+if (!requireNamespace("randomForest", quietly = TRUE)) {
+  cat("  Installing randomForest...\n")
+  install.packages("randomForest", repos = "https://cloud.r-project.org/", lib = userLib,
+                   dependencies = TRUE, type = "source")
+}
+
+# Install missForest
+if (!requireNamespace("missForest", quietly = TRUE)) {
+  cat("  Installing missForest...\n")
+  install.packages("missForest", repos = "https://cloud.r-project.org/", lib = userLib,
+                   dependencies = TRUE, type = "source")
+}
+
+cat("Dependency installation complete.\n\n")
+
+# Verify library paths
+cat("Current library paths:\n")
+print(.libPaths())
+cat("\n")
+
+# Now load all packages with pacman
 pacman::p_load(
   rio,
   here,
@@ -45,7 +100,28 @@ pacman::p_load(
   missForest,
   doParallel
 )
-cat("Packages loaded successfully.\n\n")
+cat("Packages loaded successfully.\n")
+
+# Verify missForest is loaded - TERMINATE if not
+if ("missForest" %in% loadedNamespaces()) {
+  cat("✓ missForest loaded successfully\n\n")
+} else {
+  cat("\n")
+  cat("================================================================================\n")
+  cat("ERROR: missForest failed to load properly\n")
+  cat("================================================================================\n")
+  cat("This script requires missForest for imputation.\n")
+  cat("Please check the error messages above to diagnose the installation failure.\n")
+  cat("Common issues:\n")
+  cat("  - Missing Fortran compiler (needed for randomForest)\n")
+  cat("  - Missing system dependencies\n")
+  cat("  - Insufficient permissions in user library\n")
+  cat("================================================================================\n")
+  cat("TERMINATING EARLY to save compute time.\n")
+  cat("================================================================================\n")
+  quit(status = 1, save = "no")
+}
+cat("\n")
 
 # ==============================================================================
 # CONFIGURATION

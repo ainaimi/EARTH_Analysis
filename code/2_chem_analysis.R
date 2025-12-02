@@ -12,6 +12,9 @@ pacman::p_load(
   MVN          # For multivariate normality and outlier tests
 )
 
+# Suppress default PDF graphics device when running in batch mode
+pdf(NULL)
+
 ## goal of this program is to explore distribution of environmental exposures 
 ## in EARTH data
 ## 
@@ -80,9 +83,8 @@ p_notrunc <- plot_distributions(
   ncol = 4,
   title = "Distribution of AFC, age, and Environmental Chemicals (Non-truncated)"
 )
-print(p_notrunc)
 
-ggsave(here("figures", "env_vars_notrunc.png"), units = "cm", width = 16, height = 16, dpi = 300)
+ggsave(filename = here("figures", "env_vars_notrunc.png"), plot = p_notrunc, units = "cm", width = 16, height = 16, dpi = 300)
 
 p_trunc <- plot_distributions(
   data = afc_clean_trunc,
@@ -90,9 +92,8 @@ p_trunc <- plot_distributions(
   ncol = 4,
   title = "Distribution of AFC, age, and Environmental Chemicals (Truncated)"
 )
-print(p_trunc)
 
-ggsave(here("figures", "env_vars_trunc.png"), units = "cm", width = 16, height = 16, dpi = 300)
+ggsave(filename = here("figures", "env_vars_trunc.png"), plot = p_trunc, units = "cm", width = 16, height = 16, dpi = 300)
 
 plot_vars <- c("AFCt")
 
@@ -102,9 +103,8 @@ p_notrunc <- plot_distributions(
   ncol = 1,
   title = "Distribution of AFC"
 )
-print(p_notrunc)
 
-ggsave(here("figures", "AFC_histogram.png"), units = "cm", width = 16, height = 16, dpi = 300) 
+ggsave(here("figures", "AFC_histogram.png"), plot = p_notrunc, units = "cm", width = 16, height = 16, dpi = 300) 
 
 
 
@@ -159,7 +159,6 @@ p1 <- ggplot(multivar_data, aes(x = 1:nrow(multivar_data), y = mahala_dist)) +
        y = "Mahalanobis Distance",
        color = "Outlier") +
   theme_classic()
-print(p1)
 
 # ============================================================================
 # METHOD 2: Principal Component Analysis (PCA) Based Outliers
@@ -186,32 +185,8 @@ pca_df <- data.frame(
   cumulative = pca_var[3, ] * 100  # Cumulative proportion as percentage
 )
 
-# Scree plot with cumulative variance
-ggplot(pca_df) +
-  geom_line(aes(x = PC_num, y = variance, color = "Individual"),
-            linewidth = 1) +
-  geom_point(aes(x = PC_num, y = variance, color = "Individual"),
-             size = 3) +
-  geom_line(aes(x = PC_num, y = cumulative, color = "Cumulative"),
-            linewidth = 1) +
-  geom_point(aes(x = PC_num, y = cumulative, color = "Cumulative"),
-             size = 3) +
-  geom_hline(yintercept = 80,
-             linetype = "dashed",
-             color = "gray50",
-             linewidth = 0.5) +
-  scale_color_manual(values = c("Individual" = "#2297E6",
-                                "Cumulative" = "#DF536B")) +
-  scale_x_continuous(breaks = 1:min(10, ncol(pca_var))) +
-  scale_y_continuous(expand = c(0, 0),
-                     limits = c(0, 105)) +
-  labs(title = "PCA Variance Explained",
-       x = "Principal Component",
-       y = "Variance Explained (%)",
-       color = "Type") +
-  theme_classic() +
-  theme(legend.position = "top",
-        plot.title = element_text(face = "bold"))
+# Scree plot with cumulative variance (diagnostic, not saved)
+# This plot is for console inspection only during development
 
 # Get PC scores
 pc_scores <- as.data.frame(pca_result$x[, 1:5])
@@ -237,7 +212,6 @@ p2 <- ggplot(data.frame(PC1 = pca_result$x[,1],
        y = paste0("PC2 (", round(summary(pca_result)$importance[2,2]*100, 1), "%)"),
        color = "Outlier") +
   theme_classic()
-plot(p2)
 
 # ============================================================================
 # METHOD 3: Local Outlier Factor (LOF)
@@ -322,7 +296,6 @@ p4 <- ggplot(multivar_data, aes(x = 1:nrow(multivar_data), y = .cooksd)) +
        y = "Cook's Distance",
        color = "Influence") +
   theme_classic()
-print(p4)
 
 # ============================================================================
 # SUMMARY: Flagged by Multiple Methods
@@ -350,10 +323,10 @@ cat("Observations flagged by all 4 methods:", sum(multivar_data$n_flags == 4), "
 # ============================================================================
 
 # Combine plots
-outlider_grid <- gridExtra::grid.arrange(p1, p2, p3, p4, ncol = 2)
+outlier_grid <- gridExtra::grid.arrange(p1, p2, p3, p4, ncol = 2)
 
-ggsave(plot = outlider_grid, 
-       here("figures", "outlier_grid.png"), units = "cm", width = 16, height = 16, dpi = 300)
+ggsave(plot = outlier_grid,
+       filename = here("figures", "outlier_grid.png"), units = "cm", width = 16, height = 16, dpi = 300)
 
 # Plot 5: Heatmap of flagged observations
 if (nrow(consensus_outliers) > 0) {
@@ -371,10 +344,10 @@ if (nrow(consensus_outliers) > 0) {
     theme_classic() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-  print(p5)
+  ggsave(plot = p5,
+         filename = here("figures", "outlier_heatmap.png"),
+         units = "cm", width = 16, height = 16, dpi = 300)
 }
-
-ggsave(here("figures", "outlier_heatmap.png"), units = "cm", width = 16, height = 16, dpi = 300)
 
 # ============================================================================
 # SAVE RESULTS

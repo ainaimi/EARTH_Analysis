@@ -16,6 +16,9 @@ pacman::p_load(
   gridExtra
 )
 
+# Suppress default PDF graphics device when running in batch mode
+pdf(NULL)
+
 load(here("data", "afc_clean_notrunc_IF.Rdata"))
 
 if_data <- afc_clean_notrunc %>%
@@ -60,8 +63,12 @@ res_ate
 
 res_dat <- data.frame(res_ate)
 
+# Create pairwise correlation plot of EDCs
+p_pairs <- GGally::ggpairs(log(afc_clean_notrunc[,env_vars]))
 
-GGally::ggpairs(log(afc_clean_notrunc[,env_vars]))
+ggsave(filename = here("figures", "edc_pairwise_correlations.png"),
+       plot = p_pairs,
+       width = 20, height = 20, units = "cm", dpi = 300)
 
 #### DR Learner
 ## conditional models
@@ -72,7 +79,7 @@ dr_learner_conditional <- tidy(coeftest(model_dr_cond, vcov = vcovHC(model_dr_co
   filter(term != "(Intercept)")
 # unconditional models
 dr_learner_unconditional <- map_dfr(env_vars, function(var) {
-  formula_str <- paste("dr_scores ~", var)
+  formula_str <- paste("dr_scores ~ ", var)
   model <- lm(as.formula(formula_str), data = lin_proj)
   tidy(coeftest(model, vcov = vcovHC(model, type = "HC3"))) %>%
     filter(term != "(Intercept)")  # Keep only the env_var coefficient
@@ -88,36 +95,35 @@ table2 <- rbind(table2_unconditional, table2_conditional)
 
 saveRDS(table2, file = here("output", "linear_projection_output.rds"))
 
-# Create plot of DR learner test statistics (unconditional)
+# Create combined plot of DR learner test statistics (both unconditional and conditional)
+# Order y-axis by unconditional test statistics only
 
-ggplot(table2 %>% filter(Type == "unconditional"), aes(x = statistic, y = reorder(term, statistic))) +
+# Create ordering based on unconditional statistics
+unconditional_order <- table2 %>%
+  filter(Type == "unconditional") %>%
+  arrange(statistic) %>%
+  pull(term)
+
+# Apply this ordering to the full dataset
+table2$term <- factor(table2$term, levels = unconditional_order)
+
+p_teststat <- ggplot(table2, aes(x = statistic, y = term, shape = Type)) +
   geom_vline(xintercept = 0, color = "gray", linetype = "solid") +
   geom_vline(xintercept = c(-1.96, 1.96), color = "gray70", linetype = "dotted") +
   geom_vline(xintercept = c(-1.645, 1.645), color = "gray50", linetype = "dotted") +
   geom_vline(xintercept = c(-1.28, 1.28), color = "gray30", linetype = "dotted") +
   geom_point(size = 3) +
+  scale_shape_manual(values = c("unconditional" = 16, "conditional" = 3)) +
   xlim(-3, 3) +
   xlab("Test Statistic, Linear Projection") +
   ylab("Environmental Chemical") +
-  theme_classic(base_size = 16)
+  theme_classic(base_size = 16) +
+  theme(legend.position = c(0.95, 0.05),
+        legend.justification = c(1, 0)) +
+  labs(shape = "Model Type")
 
-ggsave(filename = here("figures", "teststat_scatter_unconditional.png"),
-       width = 16, height = 16, units = "cm", dpi = 300)
-
-# Create plot of DR learner test statistics (conditional)
-
-ggplot(table2 %>% filter(Type == "conditional"), aes(x = statistic, y = reorder(term, statistic))) +
-  geom_vline(xintercept = 0, color = "gray", linetype = "solid") +
-  geom_vline(xintercept = c(-1.96, 1.96), color = "gray70", linetype = "dotted") +
-  geom_vline(xintercept = c(-1.645, 1.645), color = "gray50", linetype = "dotted") +
-  geom_vline(xintercept = c(-1.28, 1.28), color = "gray30", linetype = "dotted") +
-  geom_point(size = 3) +
-  xlim(-3, 3) +
-  xlab("Test Statistic, Linear Projection") +
-  ylab("Environmental Chemical") +
-  theme_classic(base_size = 16)
-
-ggsave(filename = here("figures", "teststat_scatter_conditional.png"),
+ggsave(filename = here("figures", "teststat_scatter.png"),
+       plot = p_teststat,
        width = 16, height = 16, units = "cm", dpi = 300)
 
 
@@ -191,18 +197,44 @@ plot_list <- lapply(seq_along(var_names), function(i) {
                    show_ylab = show_ylab)
 })
 
-# Combine plots
-plot_grid <- grid.arrange(grobs = plot_list, ncol = ncol_grid)
+# Combine plots (use arrangeGrob to avoid automatic display)
+plot_grid <- gridExtra::arrangeGrob(grobs = plot_list, ncol = ncol_grid)
 
 ggsave(plot = plot_grid, filename = here("figures", "cate_functions_full_linear.png"),
        width = 20, height = 20, units = "cm", dpi = 300)
 
 ## SuperLearner-based CATE function estimation
-# Create custom learner wrapper for EARTH
+# Automatically select chemicals based on test statistics < -1.28
+
+# Find chemicals with test statistic < -1.28 (either conditional or unconditional)
+significant_chems <- table2 %>%
+  filter(statistic < -1.28) %>%
+  pull(term) %>%
+  as.character() %>%  # Convert from factor to character
+  unique()
+
+cat("\n")
+cat("================================================================================\n")
+cat("CHEMICALS WITH TEST STATISTIC < -1.28 (α = 0.10, one-tailed):\n")
+cat("================================================================================\n")
+cat(paste(significant_chems, collapse = ", "), "\n")
+cat("Total:", length(significant_chems), "chemicals\n")
+cat("================================================================================\n\n")
+
+# Save list of significant chemicals with their test statistics
+significant_chems_details <- table2 %>%
+  filter(term %in% significant_chems) %>%
+  arrange(Type, statistic) %>%
+  select(term, Type, estimate, std.error, statistic, p.value)
+
+saveRDS(significant_chems_details, file = here("output", "significant_chemicals_blp.rds"))
+
+# Create custom learner wrapper for LOESS and GAM
 loess_learner <- create.Learner("SL.loess", tune = list(span = seq(1,2,by=.05)))
 gam_learner <- create.Learner("SL.gam", tune = list(deg.gam = seq(1,3, by=.5)))
 set.seed(123)
-# Function with SuperLearner that uses different learners based on chemical
+
+# Function with SuperLearner - now uses LOESS for all selected chemicals
 create_cate_plot_sl <- function(var_name, data, x_label, ate_estimates, show_ylab = TRUE) {
   # Select and clean data for this variable
   plot_data <- data %>%
@@ -221,14 +253,9 @@ create_cate_plot_sl <- function(var_name, data, x_label, ate_estimates, show_yla
   # Prepare data for SuperLearner
   X_train <- data.frame(x = x_sorted)
 
-  # Select SuperLearner library based on chemical
-  if (var_name %in% c("MCOP", "MEHP", "PP", "MiBP")) {
-    SL.library <- loess_learner$names
-    cat("\nUsing LOESS learner for", var_name, "\n")
-  } else {
-    SL.library <- gam_learner$names
-    cat("\nUsing GAM learner for", var_name, "\n")
-  }
+  # Use LOESS learner for all selected chemicals (they showed significance)
+  SL.library <- loess_learner$names
+  cat("\nUsing LOESS learner for", var_name, "\n")
   
   num.folds <- 10
   folds <- sort(seq(nrow(plot_data)) %% num.folds) + 1
@@ -282,18 +309,48 @@ create_cate_plot_sl <- function(var_name, data, x_label, ate_estimates, show_yla
   return(p)
 }
 
-# Create plots for all 17 EDCs using SuperLearner
-var_names <- c("MCOP","MiBP", "MEHP", "PP")
-ncol_grid <- 4
-plot_list <- lapply(seq_along(var_names), function(i) {
-  var <- var_names[i]
-  show_ylab <- (i - 1) %% ncol_grid == 0
-  create_cate_plot_sl(var, afc_clean_notrunc, x_labels[var], res_dat$estimate,
-                      show_ylab = show_ylab)
-})
+# Only create SuperLearner plots if there are significant chemicals
+if (length(significant_chems) > 0) {
 
-# Combine plots
-plot_grid <- grid.arrange(grobs = plot_list, ncol = ncol_grid)
+  # Determine grid layout based on number of chemicals
+  ncol_grid <- min(4, length(significant_chems))
+  nrow_grid <- ceiling(length(significant_chems) / ncol_grid)
 
-ggsave(plot = plot_grid, filename = here("figures", "cate_functions_paper.png"),
-       width = 30, height = 16, units = "cm", dpi = 300)
+  # Create plots for significant chemicals
+  plot_list <- lapply(seq_along(significant_chems), function(i) {
+    var <- significant_chems[i]
+    show_ylab <- (i - 1) %% ncol_grid == 0
+    create_cate_plot_sl(var, afc_clean_notrunc, x_labels[var], res_dat$estimate,
+                        show_ylab = show_ylab)
+  })
+
+  # Combine plots (use arrangeGrob to avoid automatic display)
+  plot_grid <- gridExtra::arrangeGrob(grobs = plot_list, ncol = ncol_grid)
+
+  # Calculate figure dimensions based on grid
+  fig_width <- ncol_grid * 7.5  # 7.5 cm per column
+  fig_height <- nrow_grid * 10    # 8 cm per row
+
+  ggsave(plot = plot_grid, filename = here("figures", "cate_functions_paper.png"),
+         width = fig_width, height = fig_height, units = "cm", dpi = 300)
+
+  cat("\n")
+  cat("================================================================================\n")
+  cat("LOESS-BASED CATE PLOTS SAVED\n")
+  cat("================================================================================\n")
+  cat("File: figures/cate_functions_paper.png\n")
+  cat("Grid:", nrow_grid, "rows x", ncol_grid, "columns\n")
+  cat("Dimensions:", fig_width, "cm x", fig_height, "cm\n")
+  cat("================================================================================\n\n")
+
+} else {
+
+  cat("\n")
+  cat("================================================================================\n")
+  cat("NO SIGNIFICANT CHEMICALS FOUND\n")
+  cat("================================================================================\n")
+  cat("No chemicals had test statistics < -1.28.\n")
+  cat("Skipping SuperLearner CATE plot generation.\n")
+  cat("================================================================================\n\n")
+
+}
