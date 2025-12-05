@@ -188,8 +188,8 @@ ggsave(here("figures", "missing_by_variable.png"),
 # Prepare data for imputation
 # Convert character variables to factors if needed
 a_for_imputation <- a_ %>%
-  mutate(across(c(smokstat, races, educ1, sartnew2, 
-                  previousIUI, previousIVF, eversmok, 
+  mutate(across(c(smokstat, races, educ1, sartnew2,
+                  previousIUI, previousIVF,
                   gravid), as.factor),
          year = year(AFScanDate),
          month = month(AFScanDate),
@@ -316,7 +316,6 @@ imputation_indicators <- a_ %>%
          -imp_mCPP, -imp_mEP1, -imp_mBZP1, -imp_dehp, -imp_BPA,     # identical to imp_sgratio_pht
          -imp_mCOP,              # identical to imp_mCNP
          -imp_M_PB, -imp_P_PB,   # identical to imp_B_PB
-         -imp_eversmok,          # identical to imp_smokstat
          -imp_previousIVF,       # identical to imp_previousIUI
          -imp_gravid)            # identical to imp_educ1
 

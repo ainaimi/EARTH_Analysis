@@ -22,7 +22,7 @@ afc_summary <- afc_clean %>%
 saveRDS(afc_summary, here("output", "afc_summary_by_DOR.rds"))
 
 # the relevant data:
-the_data <- c("AFCt", "year", "month", "DOR","eversmok",
+the_data <- c("AFCt", "year", "month", "DOR",
               "age", "bmi", "races", "educ1", "smokstat", "previousIVF", "previousIUI", "gravid",
 
               # 17 EDC variables (16 SG-adjusted + 1 Hg)
