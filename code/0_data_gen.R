@@ -10,7 +10,8 @@ pacman::p_load(
   naniar,
   missForest,
   doParallel,
-  foreach
+  foreach,
+  patchwork
 )
 
 # set the theme for figures
@@ -24,6 +25,59 @@ thm <- theme_classic() +
 theme_set(thm)
 
 a <- read_sas(here("data", "afc_mixtures.sas7bdat"))
+
+## step 0: create dataset with dates to compute average time between EDC/Hg measurement and AFC scan
+
+date_data <- a %>% 
+  select(id, phtsampledate, bpasampledate, hgsampledate, AFScanDate) %>% 
+  mutate(same_flag_pht_bpa = as.numeric(phtsampledate == bpasampledate),
+         same_flag_pht_afc = as.numeric(phtsampledate == AFScanDate),
+         date_diff_pht_bpa = difftime(AFScanDate, bpasampledate, units = "weeks"),
+         date_diff_hg = difftime(AFScanDate, hgsampledate, units = "weeks"))
+
+date_data
+
+table(date_data$same_flag_pht_bpa) ## all 683 have the same dates for pht and bpa meas
+table(date_data$same_flag_pht_afc) ## all 683 have the same dates for pht and bpa meas
+
+pht_bpa_plot <- ggplot(date_data) +
+  geom_histogram(aes(x = -date_diff_pht_bpa, y = ..density..),
+                 binwidth = 2, color = "black", fill = "white") +
+  geom_density(aes(x = -date_diff_pht_bpa), linewidth = 1) +
+  scale_x_continuous(expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0)) +
+  xlab("PHT/BPA - AFC Measurement Date") +
+  ylab("Density")
+
+hg_plot <- ggplot(date_data) +
+  geom_histogram(aes(x = -date_diff_hg, y = ..density..),
+                 binwidth = 2, color = "black", fill = "white") +
+  geom_density(aes(x = -date_diff_hg), linewidth = 1) +
+  scale_x_continuous(expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0)) +
+  xlab("Hg - AFC Measurement Date") +
+  ylab("Density")
+
+# Combine plots into single figure with panels A and B
+combined_date_plot <- pht_bpa_plot / hg_plot +
+  plot_annotation(tag_levels = 'A')
+
+ggsave(filename = here("figures", "date_diff_combined.png"),
+       plot = combined_date_plot,
+       width = 16, height = 20, units = "cm", dpi = 300)
+
+# Create summary table (2 rows × 6 columns)
+date_summary <- tibble(
+  Variable = c("PHT/BPA to AFC (weeks)", "Hg to AFC (weeks)"),
+  Min = round(as.numeric(c(summary(-date_data$date_diff_pht_bpa)[1], summary(-date_data$date_diff_hg)[1])), 1),
+  `1st Qu` = round(as.numeric(c(summary(-date_data$date_diff_pht_bpa)[2], summary(-date_data$date_diff_hg)[2])), 1),
+  Median = round(as.numeric(c(summary(-date_data$date_diff_pht_bpa)[3], summary(-date_data$date_diff_hg)[3])), 1),
+  Mean = round(as.numeric(c(summary(-date_data$date_diff_pht_bpa)[4], summary(-date_data$date_diff_hg)[4])), 1),
+  `3rd Qu` = round(as.numeric(c(summary(-date_data$date_diff_pht_bpa)[5], summary(-date_data$date_diff_hg)[5])), 1),
+  Max = round(as.numeric(c(summary(-date_data$date_diff_pht_bpa)[6], summary(-date_data$date_diff_hg)[6])), 1)
+)
+
+saveRDS(date_summary, here("output", "date_comparison_summary.rds"))
 
 ## step 1: select relevant variables to construct SG versions of EDCs
 

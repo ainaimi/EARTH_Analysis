@@ -81,6 +81,23 @@ knitr::kable(imputation_error, caption = "Random Forest Imputation Out-of-Bag Er
 
 The out-of-bag (OOB) error estimates provide measures of imputation accuracy. NRMSE (normalized root mean squared error) applies to continuous variables, while PFC (proportion falsely classified) applies to categorical variables. Lower values indicate better imputation performance.
 
+## Temporal Relationship Between Measurements
+
+This section examines the timing between environmental exposure measurements and AFC assessment to understand the temporal structure of the data.
+
+![Distribution of time lag between exposure measurements and AFC scan](../figures/date_diff_combined.png)
+
+Panel A shows the distribution of time (in weeks) between when phthalate and BPA samples were collected and when AFC was measured. Panel B shows the distribution for mercury samples. The density overlays help visualize the central tendency and spread of the measurement timing. Comparing the two panels reveals whether different exposure biomarkers were collected on different schedules relative to the AFC assessment.
+
+### Summary Statistics for Measurement Timing
+
+```{r date-summary}
+date_summary <- readRDS(here("output", "date_comparison_summary.rds"))
+knitr::kable(date_summary, caption = "Summary Statistics for Time Between Exposure Measurement and AFC Assessment")
+```
+
+This table provides summary statistics for the temporal gaps between exposure biomarker collection and AFC measurement. These timing patterns are important for understanding the exposure window being assessed relative to the outcome measurement.
+
 ---
 
 # Step 1: Data Management and Preprocessing
