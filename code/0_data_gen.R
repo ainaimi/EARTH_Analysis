@@ -94,7 +94,6 @@ a_ <- a %>% select(
   previousIUI,
   previousIVF,
   age,
-  eversmok,
   educ1,
   gravid,
   Hg,

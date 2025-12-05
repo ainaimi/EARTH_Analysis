@@ -9,7 +9,8 @@ pacman::p_load(
   reshape2,
   dbscan,      # For LOF (Local Outlier Factor)
   factoextra,  # For PCA visualization
-  MVN          # For multivariate normality and outlier tests
+  MVN,         # For multivariate normality and outlier tests
+  writexl      # For Excel output
 )
 
 # Suppress default PDF graphics device when running in batch mode
@@ -373,4 +374,128 @@ outliers_id <- outlier_results %>%
 
 
 saveRDS(outliers_id, here("output", "outliers_id.rds"))
+
+# ============================================================================
+# ASSOCIATION TABLES: EDC-AFC Associations Stratified by Age
+# ============================================================================
+# Creates tables of unconditional and conditional associations between AFC
+# and EDCs, stratified by age (<35 vs >=35)
+# Code incorporated from Ya-Hui's analysis (2025-12-05)
+
+cat("\n=== Creating Association Tables ===\n")
+
+# Log-transform environmental variables for association analysis
+afc_assoc_data <- afc_clean_notrunc %>%
+  mutate(across(all_of(env_vars), log))
+
+# Split data by age group
+data_lt35 <- afc_assoc_data %>%
+  filter(age < 35) %>%
+  select(AFCt, all_of(env_vars))
+
+data_ge35 <- afc_assoc_data %>%
+  filter(age >= 35) %>%
+  select(AFCt, all_of(env_vars))
+
+cat("Sample size age < 35:", nrow(data_lt35), "\n")
+cat("Sample size age >= 35:", nrow(data_ge35), "\n\n")
+
+# Age < 35 group: Unconditional models (AFCt ~ each env var separately)
+cat("Fitting unconditional models for age < 35...\n")
+unconditional_lt35 <- map_dfr(env_vars, function(var) {
+  formula_str <- paste("AFCt ~", var)
+  model <- lm(as.formula(formula_str), data = data_lt35)
+  tidy(coeftest(model, vcov = vcovHC(model, type = "HC3"))) %>%
+    filter(term == var) %>%
+    transmute(
+      env_var   = var,
+      estimate  = round(estimate, 2),
+      std_error = round(std.error, 2),
+      coef_se   = paste0(estimate, " (", std_error, ")")
+    )
+})
+
+# Age >= 35 group: Unconditional models
+cat("Fitting unconditional models for age >= 35...\n")
+unconditional_ge35 <- map_dfr(env_vars, function(var) {
+  formula_str <- paste("AFCt ~", var)
+  model <- lm(as.formula(formula_str), data = data_ge35)
+  tidy(coeftest(model, vcov = vcovHC(model, type = "HC3"))) %>%
+    filter(term == var) %>%
+    transmute(
+      env_var   = var,
+      estimate  = round(estimate, 2),
+      std_error = round(std.error, 2),
+      coef_se   = paste0(estimate, " (", std_error, ")")
+    )
+})
+
+# Age < 35 group: Conditional model (AFCt ~ all env vars)
+cat("Fitting conditional model for age < 35...\n")
+model_cond_lt35 <- lm(AFCt ~ ., data = data_lt35)
+conditional_lt35 <- tidy(
+  coeftest(model_cond_lt35, vcov = vcovHC(model_cond_lt35, type = "HC3"))
+) %>%
+  filter(term %in% env_vars) %>%
+  transmute(
+    env_var   = term,
+    estimate  = round(estimate, 2),
+    std_error = round(std.error, 2),
+    coef_se   = paste0(estimate, " (", std_error, ")")
+  )
+
+# Age >= 35 group: Conditional model
+cat("Fitting conditional model for age >= 35...\n")
+model_cond_ge35 <- lm(AFCt ~ ., data = data_ge35)
+conditional_ge35 <- tidy(
+  coeftest(model_cond_ge35, vcov = vcovHC(model_cond_ge35, type = "HC3"))
+) %>%
+  filter(term %in% env_vars) %>%
+  transmute(
+    env_var   = term,
+    estimate  = round(estimate, 2),
+    std_error = round(std.error, 2),
+    coef_se   = paste0(estimate, " (", std_error, ")")
+  )
+
+# Combine all results into a single table
+results_combined <- tibble(env_var = env_vars) %>%
+  left_join(
+    conditional_lt35 %>%
+      select(env_var, coef_se) %>%
+      rename(conditional_lt35 = coef_se),
+    by = "env_var"
+  ) %>%
+  left_join(
+    unconditional_lt35 %>%
+      select(env_var, coef_se) %>%
+      rename(unconditional_lt35 = coef_se),
+    by = "env_var"
+  ) %>%
+  left_join(
+    conditional_ge35 %>%
+      select(env_var, coef_se) %>%
+      rename(conditional_ge35 = coef_se),
+    by = "env_var"
+  ) %>%
+  left_join(
+    unconditional_ge35 %>%
+      select(env_var, coef_se) %>%
+      rename(unconditional_ge35 = coef_se),
+    by = "env_var"
+  ) %>%
+  rename(var = env_var) %>%
+  select(var, conditional_lt35, unconditional_lt35,
+         conditional_ge35, unconditional_ge35)
+
+# Save results
+saveRDS(results_combined, here("output", "association_table_by_age.rds"))
+write_xlsx(
+  list("all_models" = results_combined),
+  path = here("output", "association_table_by_age.xlsx")
+)
+
+cat("\n=== Association tables saved ===\n")
+cat("  - RDS: output/association_table_by_age.rds\n")
+cat("  - Excel: output/association_table_by_age.xlsx\n")
 
