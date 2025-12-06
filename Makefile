@@ -41,8 +41,8 @@ IMPUTED_DATA := $(DATA_DIR)/imputed_EARTH.Rdata
 # Outputs from Step 1: cleaned data with and without truncation
 DATA_OUTPUTS := $(DATA_DIR)/afc_clean_trunc.Rdata $(DATA_DIR)/afc_clean_notrunc.Rdata
 
-# Output from Step 2: figure files from chemical analysis
-CHEM_OUTPUTS := $(FIG_DIR)/env_vars_notrunc.png $(FIG_DIR)/env_vars_trunc.png $(FIG_DIR)/AFC_histogram.png $(FIG_DIR)/outlier_grid.png $(FIG_DIR)/outlier_heatmap.png
+# Output from Step 2: figure files from chemical analysis and association tables
+CHEM_OUTPUTS := $(FIG_DIR)/env_vars_notrunc.png $(FIG_DIR)/env_vars_trunc.png $(FIG_DIR)/AFC_histogram.png $(FIG_DIR)/outlier_grid.png $(FIG_DIR)/outlier_heatmap.png $(FIG_DIR)/date_diff_combined.png $(OUTPUT_DIR)/association_table_by_age.rds
 
 # Outputs from Step 3: RDS files containing fitted IF score models (mu and pi)
 IF_OUTPUTS := $(MISC_DIR)/fit_mu.RDS $(MISC_DIR)/fit_pi.RDS
@@ -165,7 +165,6 @@ $(ANALYSIS_OUTPUTS): $(CODE_DIR)/4_IF_scores_analysis.R $(IF_OUTPUTS)
 
 # Target: create HTML report from Quarto markdown file
 # Dependencies: runs if .qmd file OR analysis outputs are newer than HTML report
-# Note: Sensitivity analyses (Step 5) are run separately on HPC cluster
 $(REPORT): $(CODE_DIR)/EARTH_Analysis_Report.qmd $(ANALYSIS_OUTPUTS)
 	# Print status message to terminal
 	@echo "======================================"
@@ -270,11 +269,9 @@ help:
 	@echo "Individual steps:"
 	@echo "  make step0        - Data generation and random forest imputation (slow)"
 	@echo "  make step1        - Data management"
-	@echo "  make step2        - Chemical analysis and outlier detection"
+	@echo "  make step2        - Chemical analysis, association tables, and outlier detection"
 	@echo "  make step3        - IF score generation (slow)"
 	@echo "  make step4        - Heterogeneity analysis and plots"
-	@echo ""
-	@echo "Note: Sensitivity analyses (Step 5) run on HPC cluster - see code/CLUSTER_README.md"
 	@echo ""
 	# Print cleaning commands section
 	@echo "Cleaning:"
