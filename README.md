@@ -11,15 +11,12 @@ average treatment effects. We use this learner to estimate how the association b
 
 ## Analysis Pipeline
 
-The analysis consists of two main components: **local analyses** (Steps 0-4) and **cluster-based sensitivity analyses** (Step 5).
-
-### Local Analyses (Steps 0-4)
-
-These core analyses are designed to run on a local machine and can be executed via the included Makefile.
+The analysis consists of a 5-step pipeline designed to run on a local machine and can be executed via the included Makefile.
 
 0. **`0_data_gen.R`** - Data generation and random forest imputation
    - Loads raw EARTH study data
    - Analyzes missing data patterns
+   - Examines temporal relationship between exposure measurement and AFC assessment
    - Performs random forest imputation for variables with <40% missingness
    - Excludes variables with >40% missingness (BPS, BPF, BP3, TCS, OPFR metabolites)
    - Generates imputation diagnostics and comparison plots
@@ -34,6 +31,8 @@ These core analyses are designed to run on a local machine and can be executed v
    - Compares truncated vs. non-truncated modifier data
    - Generates descriptive statistics
    - Performs multivariate outlier detection (Mahalanobis, PCA, LOF, Cook's D)
+   - Creates association tables: EDC-AFC associations stratified by age (<35 vs ≥35)
+   - Fits unconditional and conditional models with robust standard errors (HC3)
 
 3. **`3_IF_scores_gen.R`** - Influence function score generation
    - Implements the DR learner models using cross-validated SuperLearner
@@ -48,22 +47,7 @@ These core analyses are designed to run on a local machine and can be executed v
 
 **Quarto Report** - `EARTH_Analysis_Report.qmd`
    - Compiles all results into a comprehensive HTML report
-   - Includes missing data analysis, descriptive statistics, model diagnostics, and CATE results
-
-### Cluster-Based Sensitivity Analyses (Step 5)
-
-Computationally intensive sensitivity analyses testing robustness across 24 scenarios:
-- Age thresholds: 35, 36, 37, 38, 39, 40 years
-- AFC>30 imputation (yes/no)
-- EDC>97.5th percentile imputation (yes/no)
-
-**Cluster Scripts:**
-- **`cluster/5_cluster.R`** - Main sensitivity analysis script for HPC execution
-- **`cluster/earth.sh`** - SLURM job submission script (6 parallel jobs, 4 scenarios each)
-- **`cluster/5_combine_results.R`** - Combines results from all cluster jobs
-- **`cluster/5_sensitivity_plot.R`** - Generates sensitivity analysis visualizations
-
-See `code/cluster/CLUSTER_README.md` for detailed instructions on running sensitivity analyses on an HPC cluster with SLURM.
+   - Includes missing data analysis, temporal measurement patterns, descriptive statistics, model diagnostics, and CATE results
 
 ## Requirements
 
@@ -77,25 +61,18 @@ EARTH_Analysis/
 ├── code/                      # Analysis scripts
 │   ├── 0_data_gen.R           # Data generation and imputation
 │   ├── 1_data_man.R           # Data management
-│   ├── 2_chem_analysis.R      # Chemical analysis and outliers
+│   ├── 2_chem_analysis.R      # Chemical analysis and association tables
 │   ├── 3_IF_scores_gen.R      # IF score generation
 │   ├── 4_IF_scores_analysis.R # Heterogeneity analysis
-│   ├── cluster/               # Cluster-based sensitivity analysis
-│   │   ├── 5_cluster.R        # Main cluster analysis script
-│   │   ├── 5_combine_results.R # Combine cluster results
-│   │   ├── 5_sensitivity_plot.R # Sensitivity plots
-│   │   ├── earth.sh           # SLURM submission script
-│   │   └── CLUSTER_README.md  # Cluster usage guide
 │   ├── EARTH_Analysis_Report.qmd # Quarto report
 │   └── .gitignore             # Ignores Quarto cache and temp files
 ├── data/                      # Raw and processed data files (not tracked)
 ├── figures/                   # Generated figures (not tracked)
-├── output/                    # Analysis results as .rds files (not tracked)
-├── logs/                      # Cluster job logs (not tracked)
+├── output/                    # Analysis results as .rds and .xlsx files (not tracked)
 ├── manuscript/                # Manuscript drafts (not tracked)
 ├── sandbox/                   # Exploratory analyses (not tracked)
 ├── misc/                      # Miscellaneous files (not tracked)
-├── Makefile                   # Automated local pipeline orchestration
+├── Makefile                   # Automated pipeline orchestration
 └── README.md                  # This file
 ```
 
@@ -106,17 +83,17 @@ EARTH_Analysis/
 2. Place raw EARTH data files in the `data/` directory
 3. Open the R project: `EARTH_Analysis.Rproj`
 
-### Running Local Analyses
+### Running the Analysis
 
 **Using Make (Recommended)**
 ```bash
-# Run entire local pipeline (Steps 0-4 + report generation)
+# Run entire pipeline (Steps 0-4 + report generation)
 make all
 
 # Or run individual steps
 make step0  # Data generation and imputation
 make step1  # Data management
-make step2  # Chemical analysis
+make step2  # Chemical analysis and association tables
 make step3  # IF score generation
 make step4  # Heterogeneity analysis
 make report # Generate HTML report only
@@ -138,22 +115,6 @@ Rscript code/4_IF_scores_analysis.R
 
 # Generate report
 quarto render code/EARTH_Analysis_Report.qmd --output-dir output
-```
-
-### Running Cluster-Based Sensitivity Analyses
-
-For detailed instructions on running sensitivity analyses on an HPC cluster, see `code/cluster/CLUSTER_README.md`.
-
-**Quick Start:**
-```bash
-# On cluster: Submit sensitivity analysis jobs
-sbatch code/cluster/earth.sh
-
-# After jobs complete: Combine results
-Rscript code/cluster/5_combine_results.R
-
-# Generate sensitivity plots
-Rscript code/cluster/5_sensitivity_plot.R
 ```
 
 ## Citation
