@@ -38,7 +38,8 @@ Icon?
 *~
 *.tmp
 /_notes
-/output
+/output/*
+!/output/EARTH_Analysis_Report.html
 .positai
 /_corpus
 STATUS.md
