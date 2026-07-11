@@ -39,3 +39,7 @@ Icon?
 *.tmp
 /_notes
 /output
+.positai
+/_corpus
+STATUS.md
+/_specs
