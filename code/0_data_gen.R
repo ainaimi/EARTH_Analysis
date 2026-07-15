@@ -79,6 +79,30 @@ date_summary <- tibble(
 
 saveRDS(date_summary, here("output", "date_comparison_summary.rds"))
 
+# Count exposure samples collected before / after / on the day of the AFC scan.
+# date_diff = AFScanDate - sample date (weeks); a NEGATIVE value means the sample
+# was collected AFTER the AFC scan (sample date later than the scan date).
+timing_counts <- function(x) {
+  x <- as.numeric(x)
+  n <- sum(!is.na(x))
+  tibble(
+    N          = n,
+    n_after    = as.integer(sum(x < 0,  na.rm = TRUE)),
+    pct_after  = 100 * sum(x < 0,  na.rm = TRUE) / n,
+    n_before   = as.integer(sum(x > 0,  na.rm = TRUE)),
+    pct_before = 100 * sum(x > 0,  na.rm = TRUE) / n,
+    n_same     = as.integer(sum(x == 0, na.rm = TRUE)),
+    pct_same   = 100 * sum(x == 0, na.rm = TRUE) / n
+  )
+}
+
+date_timing_counts <- bind_rows(
+  timing_counts(date_data$date_diff_pht_bpa) %>% mutate(Variable = "PHT/BPA", .before = 1),
+  timing_counts(date_data$date_diff_hg)      %>% mutate(Variable = "Hg",      .before = 1)
+)
+
+saveRDS(date_timing_counts, here("output", "date_timing_counts.rds"))
+
 ## step 1: select relevant variables to construct SG versions of EDCs
 
 a_ <- a %>% select(

@@ -98,6 +98,28 @@ knitr::kable(date_summary, caption = "Summary Statistics for Time Between Exposu
 
 This table provides summary statistics for the temporal gaps between exposure biomarker collection and AFC measurement. These timing patterns are important for understanding the exposure window being assessed relative to the outcome measurement.
 
+### Sample Timing Relative to the AFC Scan
+
+Because EARTH participants provided urine and hair samples at study entry and during subsequent treatment cycles, the single sample selected as closest to the AFC assessment could be collected either before or after the scan. The table below reports how many exposure samples fell on each side of the AFC scan.
+
+```{r date-timing-counts}
+date_timing_counts <- readRDS(here("output", "date_timing_counts.rds"))
+date_timing_display <- data.frame(
+  Variable = date_timing_counts$Variable,
+  N = date_timing_counts$N,
+  `Collected after AFC scan, n (%)`  = sprintf("%d (%.1f%%)", date_timing_counts$n_after,  date_timing_counts$pct_after),
+  `Collected before AFC scan, n (%)` = sprintf("%d (%.1f%%)", date_timing_counts$n_before, date_timing_counts$pct_before),
+  `Same day, n (%)`                  = sprintf("%d (%.1f%%)", date_timing_counts$n_same,   date_timing_counts$pct_same),
+  check.names = FALSE
+)
+knitr::kable(
+  date_timing_display,
+  caption = "Number of exposure samples collected before, after, or on the same day as the AFC scan. A sample is classified as collected *after* the scan when its collection date is later than the AFC scan date (equivalently, a negative value of AFC scan date minus sample date)."
+)
+```
+
+For most participants, the exposure biomarker was measured *after* the AFC scan: `r date_timing_counts$n_after[1]` of `r date_timing_counts$N[1]` phthalate/BPA samples (`r round(date_timing_counts$pct_after[1], 1)`%) and `r date_timing_counts$n_after[2]` of `r date_timing_counts$N[2]` hair mercury samples (`r round(date_timing_counts$pct_after[2], 1)`%) were collected after the scan, compared with `r round(date_timing_counts$pct_before[1], 1)`% and `r round(date_timing_counts$pct_before[2], 1)`% collected before it. This confirms that the closest available sample could fall on either side of the AFC assessment and, in the large majority of cases, was measured shortly afterward.
+
 ---
 
 # Step 1: Data Management and Preprocessing
