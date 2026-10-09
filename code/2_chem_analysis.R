@@ -27,7 +27,7 @@ load(here("data", "afc_clean_notrunc.Rdata"))
 ## some basic outlier / leverage analyses
 ## do the people with extreme chem values also have large outcome values?
 ##
-# 17 EDC variables with <40% missing (16 SG-adjusted + 1 Hg)
+# 16 EDC variables with <40% missing (15 SG-adjusted urinary + 1 hair Hg)
 # (defined in file 1_data_man.R)
 env_vars <- c("MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
               "MCPP", "MEP", "MBzP", #"sumDEHP",

@@ -38,7 +38,7 @@ date_data <- a %>%
 date_data
 
 table(date_data$same_flag_pht_bpa) ## all 683 have the same dates for pht and bpa meas
-table(date_data$same_flag_pht_afc) ## all 683 have the same dates for pht and bpa meas
+table(date_data$same_flag_pht_afc) ## how many PHT samples were collected on the AFC scan date
 
 pht_bpa_plot <- ggplot(date_data) +
   geom_histogram(aes(x = -date_diff_pht_bpa, y = ..density..),
@@ -226,6 +226,11 @@ a_for_imputation <- a_ %>%
 # verbose: show progress
 n_cores <- detectCores() - 2
 registerDoParallel(cores = n_cores)
+# NOTE: set.seed() does not seed the doParallel worker processes, so repeated
+# runs of missForest with parallelize = "variables" return different imputed
+# values (observed values are unaffected). The manuscript results use the
+# realization generated on 2025-12-01. For reproducible parallel imputation in
+# future runs, register doRNG::registerDoRNG(123) after registerDoParallel().
 set.seed(123)  # For reproducibility
 imputation_result <- missForest(
   xmis = data.frame(a_for_imputation),
@@ -350,7 +355,8 @@ a_imputed <- a_imputed %>%
     # Add study ID as first column
     study_id = study_id,
 
-    # Phthalate metabolites (adjusted by sgratio_pht) - 12 variables
+    # Phthalate metabolites (adjusted by sgratio_pht) - 11 metabolites + sumDEHP
+    # (sumDEHP is carried forward but not used in downstream analyses)
     MBP = mBP * sgratio_pht,
     MiBP = miBP * sgratio_pht,
     MCNP = mCNP * sgratio_pht,

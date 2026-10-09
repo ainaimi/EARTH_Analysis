@@ -25,7 +25,8 @@ saveRDS(afc_summary, here("output", "afc_summary_by_DOR.rds"))
 the_data <- c("AFCt", "year", "month", "DOR",
               "age", "bmi", "races", "educ1", "smokstat", "previousIVF", "previousIUI", "gravid",
 
-              # 17 EDC variables (16 SG-adjusted + 1 Hg)
+              # 16 EDC variables (15 SG-adjusted urinary + 1 hair Hg); sumDEHP is
+              # computed in 0_data_gen.R but not used (collinear with its components)
               "MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
               "MCPP", "MEP", "MBzP", #"sumDEHP",
               "BPA", "BP", "MP", "PP",
@@ -36,7 +37,7 @@ impute_flags <- c("imp_sgratio_pht", "imp_smokstat", "imp_races", "imp_bmi", "im
                   "imp_age", "imp_educ1", "imp_Hg", "imp_mBP", "imp_mCNP",
                   "imp_B_PB", "imp_AFScanDate")
 
-# 17 EDC variables with <40% missing (16 SG-adjusted + 1 Hg)
+# 16 EDC variables with <40% missing (15 SG-adjusted urinary + 1 hair Hg)
 env_vars <- c("MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
               "MCPP", "MEP", "MBzP", #"sumDEHP",
               "BPA", "BP", "MP", "PP",

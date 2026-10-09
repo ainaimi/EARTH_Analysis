@@ -28,14 +28,16 @@ if_data <- data.frame(if_data)
 
 names(if_data) <- c("dr_scores")
 
-# 17 EDC variables with <40% missing (16 SG-adjusted + 1 Hg)
+# 16 EDC variables with <40% missing (15 SG-adjusted urinary + 1 hair Hg)
 # (defined in file 1_data_man.R)
 env_vars <- c("MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
               "MCPP", "MEP", "MBzP", #"sumDEHP",
               "BPA", "BP", "MP", "PP",
               "Hg")
 
-# ATEs
+# Overall covariate-standardized mean difference (psi), estimated as the mean of
+# the AIPW scores. Function/object names keep the ATE/CATE labels from the
+# DR-learner literature; see README for the associational interpretation.
 ate_func <- function(a){
 
   a <- unlist(a)
@@ -148,7 +150,7 @@ x_labels <- c(
   "BP" = "log(BP), μg/L",
   "MP" = "log(MP), μg/L",
   "PP" = "log(PP), μg/L",
-  "Hg" = "log(Hg), ppm"
+  "Hg" = "log(Hg), ng/g"
 )
 
 ## linear

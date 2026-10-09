@@ -45,7 +45,7 @@ hist(outcome)
 # identify and transform categorical
 categorical_vars <- afc_clean_notrunc %>% select(where(is.factor), -DOR)
 
-# 17 EDC variables with <40% missing (16 SG-adjusted + 1 Hg)
+# 16 EDC variables with <40% missing (15 SG-adjusted urinary + 1 hair Hg)
 # (defined in file 1_data_man.R)
 env_vars <- c("MBP", "MiBP", "MCNP", "MCOP", "MECPP", "MEHHP", "MEHP", "MEOHP",
               "MCPP", "MEP", "MBzP", #"sumDEHP",
@@ -111,7 +111,7 @@ sl_lib <- list("SL.mean", "SL.glm",
   
 
 # Specify the number of folds for V-fold cross-validation
-# Use same folds as used for causal_forest function
+# The same folds are used for the outcome and propensity score models
 # Doing cross-validation this way automatically deploys cross-fitting
 num.folds <- 10
 folds <- sort(seq(length(exposure)) %% num.folds) + 1
@@ -232,7 +232,11 @@ ps_overlap_plot
 ggsave(plot = ps_overlap_plot, filename = here("figures", "ps_overlap_plot.png"),
        units = "cm", height = 16, width = 16, dpi = 300)
 
-# Again, with these diagnostics complete, we can construct and ATE estimate using the double robust AIPW estimator, with the exposure and outcome models obtained via stacking:
+# With these diagnostics complete, we construct the AIPW scores (the efficient
+# influence function for the covariate-standardized mean difference psi) from the
+# cross-fitted exposure and outcome models, and average them to estimate psi.
+# Object names below keep the ATE label used in the DR-learner literature; the
+# quantity is the standardized associational contrast defined in the manuscript.
 
 ## cross-fit predictions
 
